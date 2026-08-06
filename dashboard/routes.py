@@ -43,3 +43,20 @@ def home(request: Request, api_client: ApiClient = Depends(get_api_client)):
             "error": error,
         },
     )
+
+
+@router.get("/metrics")
+def metrics_page(request: Request, api_client: ApiClient = Depends(get_api_client)):
+    metrics = None
+    error = None
+
+    try:
+        metrics = api_client.get_metrics()
+    except ApiUnavailableError as exc:
+        error = str(exc)
+
+    return templates.TemplateResponse(
+        request,
+        "metrics.html",
+        {"metrics": metrics, "error": error},
+    )
