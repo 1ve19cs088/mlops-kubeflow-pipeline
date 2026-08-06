@@ -6,10 +6,13 @@ renders a template — no prediction/validation/training/evaluation
 logic lives here, only presentation.
 """
 
+import io
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request
+import pandas as pd
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi.responses import StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from dashboard.api_client import (
@@ -158,5 +161,108 @@ async def predict_submit(
             confidence=confidence,
             response_time_ms=response_time_ms,
             predict_error=predict_error,
+        ),
+    )
+
+
+def _batch_context(metadata, error, **overrides):
+    context = {
+        "metadata": metadata,
+        "error": error,
+        "preview_rows": None,
+        "preview_columns": None,
+        "batch_error": None,
+    }
+    context.update(overrides)
+    return context
+
+
+@router.get("/batch")
+def batch_form(request: Request, api_client: ApiClient = Depends(get_api_client)):
+    metadata = None
+    error = None
+
+    try:
+        metadata = api_client.get_metadata()
+    except ApiUnavailableError as exc:
+        error = str(exc)
+
+    return templates.TemplateResponse(
+        request, "batch.html", _batch_context(metadata, error)
+    )
+
+
+@router.post("/batch")
+async def batch_submit(
+    request: Request,
+    file: UploadFile = File(...),
+    action: str = Form("preview"),
+    api_client: ApiClient = Depends(get_api_client),
+):
+    metadata = None
+    error = None
+
+    try:
+        metadata = api_client.get_metadata()
+    except ApiUnavailableError as exc:
+        error = str(exc)
+
+    if not metadata:
+        return templates.TemplateResponse(
+            request, "batch.html", _batch_context(metadata, error)
+        )
+
+    contents = await file.read()
+    df = pd.read_csv(io.BytesIO(contents))
+
+    batch_error = None
+    result_df = None
+
+    missing = [name for name in metadata["feature_names"] if name not in df.columns]
+    if missing:
+        batch_error = f"CSV is missing required columns: {', '.join(missing)}"
+    else:
+        records = [
+            {
+                name: coerce_value(row[name], metadata["feature_dtypes"][name])
+                for name in metadata["feature_names"]
+            }
+            for _, row in df.iterrows()
+        ]
+
+        try:
+            result = api_client.predict_batch(records)
+            result_df = df.copy()
+            result_df["prediction"] = result["predictions"]
+        except ApiValidationError as exc:
+            batch_error = f"Invalid input: {exc.detail}"
+        except ApiUnavailableError as exc:
+            batch_error = f"API unavailable: {exc}"
+
+    if result_df is not None and action == "download":
+        buffer = io.StringIO()
+        result_df.to_csv(buffer, index=False)
+        buffer.seek(0)
+        return StreamingResponse(
+            iter([buffer.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=predictions.csv"},
+        )
+
+    preview_rows = None
+    preview_columns = None
+    if result_df is not None:
+        preview_columns = list(result_df.columns)
+        preview_rows = result_df.head(20).values.tolist()
+
+    return templates.TemplateResponse(
+        request,
+        "batch.html",
+        _batch_context(
+            metadata,
+            None,
+            preview_rows=preview_rows,
+            preview_columns=preview_columns,
+            batch_error=batch_error,
         ),
     )

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Batch Predict — MLOps Dashboard{% endblock %}
+{% block content %}
+<h1 class="mb-4">Batch Prediction</h1>
+
+{% if metadata %}
+<p class="text-muted">CSV must include columns: {{ metadata.feature_names | join(", ") }}</p>
+
+<form method="post" action="/batch" enctype="multipart/form-data" class="row g-3 align-items-end">
+  <div class="col-md-6">
+    <label class="form-label">CSV file</label>
+    <input type="file" name="file" accept=".csv" class="form-control" required>
+  </div>
+  <div class="col-md-6">
+    <button type="submit" name="action" value="preview" class="btn btn-primary">Preview</button>
+    <button type="submit" name="action" value="download" class="btn btn-outline-secondary">Predict &amp; Download CSV</button>
+  </div>
+</form>
+
+{% if batch_error %}
+<div class="alert alert-danger mt-3">{{ batch_error }}</div>
+{% endif %}
+
+{% if preview_rows %}
+<h5 class="mt-4">Preview (first {{ preview_rows|length }} rows)</h5>
+<div class="table-responsive">
+  <table class="table table-bordered table-sm">
+    <thead><tr>{% for col in preview_columns %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for row in preview_rows %}
+      <tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% else %}
+<p class="text-muted">Unable to reach the API — see the warning above.</p>
+{% endif %}
+{% endblock %}
