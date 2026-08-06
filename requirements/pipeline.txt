@@ -1,11 +1,21 @@
 # Everything the offline training pipeline (src/) needs at runtime —
 # matplotlib for confusion matrix plotting, PyYAML for config loading,
 # kfp for Kubeflow pipeline compilation, docker for kfp.local's
-# DockerRunner (local pipeline execution). None of this belongs in the
-# serving image.
+# DockerRunner (local pipeline execution), mlflow-skinny for experiment
+# tracking + model registry. None of this belongs in the serving image.
+#
+# mlflow-skinny, not the full mlflow package: mlflow (full) hard-pins
+# pandas<3 and cryptography<50, both incompatible with this project's
+# existing pins (pandas==3.0.5 was deliberately chosen — see the
+# feature_engineering dtype fix earlier in this project's history).
+# mlflow-skinny provides the same tracking client, model registry, and
+# mlflow.sklearn.log_model API with no such constraint, verified
+# working end-to-end (run logging + model registration) against the
+# pinned scikit-learn/pandas already in base.txt.
 -r base.txt
 
 matplotlib==3.11.1
 PyYAML==6.0.3
 kfp==2.17.0
 docker==7.2.0
+mlflow-skinny==3.15.1

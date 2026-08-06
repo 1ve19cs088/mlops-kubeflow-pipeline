@@ -5,6 +5,7 @@ This module orchestrates the MLOps pipeline.
 """
 
 import os
+import time
 
 from src.config.settings import CONFIG_DIR
 from src.config.yaml_loader import load_yaml
@@ -13,6 +14,7 @@ from src.data.validate_data import run as validate_data
 from src.features.feature_engineering import run as engineer_features
 from src.models.evaluate import run as evaluate_model
 from src.models.train import run as train_model
+from src.tracking.mlflow_tracking import log_run as log_mlflow_run
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -55,7 +57,9 @@ def main(config_filename: str = DEFAULT_CONFIG_FILENAME):
 
     logger.info("========== MODEL TRAINING STAGE ==========")
 
+    training_start = time.perf_counter()
     training = train_model(features, config)
+    training_duration_seconds = time.perf_counter() - training_start
 
     logger.info(f"Training artifacts: {training}")
 
@@ -73,6 +77,14 @@ def main(config_filename: str = DEFAULT_CONFIG_FILENAME):
         f"overfitting gap: {overfitting_gap:.4f}"
     )
     logger.info(f"Evaluation artifacts: {evaluation}")
+
+    logger.info("========== MLFLOW TRACKING STAGE ==========")
+
+    run_id = log_mlflow_run(
+        training, features, evaluation, config, training_duration_seconds
+    )
+
+    logger.info(f"MLflow run ID: {run_id}")
 
     logger.info("Pipeline execution completed successfully.")
 
