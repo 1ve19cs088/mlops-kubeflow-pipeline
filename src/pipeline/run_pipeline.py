@@ -4,6 +4,8 @@ Pipeline entry point.
 This module orchestrates the MLOps pipeline.
 """
 
+import os
+
 from src.config.settings import CONFIG_DIR
 from src.config.yaml_loader import load_yaml
 from src.data.ingest_data import run as ingest_data
@@ -15,13 +17,19 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+DEFAULT_CONFIG_FILENAME = "iris.yaml"
 
-def main():
+
+def main(config_filename: str = DEFAULT_CONFIG_FILENAME):
     """
     Main pipeline execution.
+
+    Args:
+        config_filename: Name of the YAML config file under configs/
+            to run the pipeline with.
     """
 
-    config_path = CONFIG_DIR / "iris.yaml"
+    config_path = CONFIG_DIR / config_filename
 
     config = load_yaml(config_path)
 
@@ -70,4 +78,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(os.environ.get("CONFIG_FILE", DEFAULT_CONFIG_FILENAME))
