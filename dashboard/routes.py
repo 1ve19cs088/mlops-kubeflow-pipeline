@@ -21,6 +21,7 @@ from dashboard.api_client import (
     ApiValidationError,
     get_api_client,
 )
+from dashboard.deployment_info import get_deployment_info
 from dashboard.dtype_utils import coerce_value, html_input_type
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -266,3 +267,10 @@ async def batch_submit(
             batch_error=batch_error,
         ),
     )
+
+
+@router.get("/deployment")
+def deployment_page(request: Request):
+    info = get_deployment_info()
+
+    return templates.TemplateResponse(request, "deployment.html", {"info": info})

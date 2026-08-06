@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Deployment — MLOps Dashboard{% endblock %}
+{% block content %}
+<h1 class="mb-4">Deployment</h1>
+
+<div class="row g-3">
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Environment</h6><p class="mb-0">{{ info.environment }}</p>
+  </div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Docker</h6><p class="mb-0">{{ "Yes" if info.docker else "No" }}</p>
+  </div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Kubernetes</h6><p class="mb-0">{{ "Yes" if info.kubernetes else "No" }}</p>
+  </div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Current API URL</h6><p class="mb-0">{{ info.api_base_url }}</p>
+  </div></div></div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Namespace</h6><p class="mb-0">{{ info.namespace or "not available" }}</p>
+  </div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Deployment Name</h6><p class="mb-0">{{ info.deployment_name or "not available" }}</p>
+  </div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Replica Count</h6><p class="mb-0">{{ info.replica_count if info.replica_count is not none else "not available" }}</p>
+  </div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Container Image</h6><p class="mb-0">{{ info.container_image or "not available" }}</p>
+  </div></div></div>
+</div>
+
+<p class="text-muted mt-3">
+  Namespace, deployment name, replica count, and image are read from
+  this repo's <code>kubernetes/</code> manifests (declared desired
+  state), not a live cluster query — this dashboard never talks to a
+  Kubernetes cluster directly.
+</p>
+{% endblock %}
