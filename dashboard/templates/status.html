@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}System Status — MLOps Dashboard{% endblock %}
+{% block content %}
+<h1 class="mb-4">System Status</h1>
+
+<div class="row g-3">
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">API</h6>
+    <span class="badge {{ 'bg-success' if api_ok else 'bg-danger' }}">{{ "Healthy" if api_ok else "Unreachable" }}</span>
+  </div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Model</h6>
+    {% if model_ok %}
+    <span class="badge bg-success">Loaded ({{ model_info.algorithm }})</span>
+    {% else %}
+    <span class="badge bg-danger">Unavailable</span>
+    {% endif %}
+  </div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Docker</h6>
+    <span class="badge {{ 'bg-success' if docker else 'bg-secondary' }}">{{ "Running in Docker" if docker else "Not in Docker" }}</span>
+  </div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Kubernetes</h6>
+    <span class="badge {{ 'bg-success' if kubernetes else 'bg-secondary' }}">{{ "Running in Kubernetes" if kubernetes else "Not in Kubernetes" }}</span>
+  </div></div></div>
+</div>
+
+<div class="mt-4">
+  <h6 class="text-muted">CI/CD</h6>
+  <img src="{{ github_badge_url }}" alt="GitHub Actions status">
+</div>
+
+{% if api_error %}
+<div class="alert alert-warning mt-3">API unreachable: {{ api_error }}</div>
+{% endif %}
+{% endblock %}

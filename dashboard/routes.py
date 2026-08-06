@@ -23,6 +23,7 @@ from dashboard.api_client import (
 )
 from dashboard.deployment_info import get_deployment_info
 from dashboard.dtype_utils import coerce_value, html_input_type
+from dashboard.status_info import get_environment_status, get_github_actions_badge_url
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -274,3 +275,39 @@ def deployment_page(request: Request):
     info = get_deployment_info()
 
     return templates.TemplateResponse(request, "deployment.html", {"info": info})
+
+
+@router.get("/status")
+def status_page(request: Request, api_client: ApiClient = Depends(get_api_client)):
+    api_ok = False
+    model_ok = False
+    model_info = None
+    api_error = None
+
+    try:
+        api_client.get_health()
+        api_ok = True
+    except ApiUnavailableError as exc:
+        api_error = str(exc)
+
+    try:
+        model_info = api_client.get_metadata()
+        model_ok = True
+    except ApiUnavailableError:
+        pass
+
+    environment = get_environment_status()
+
+    return templates.TemplateResponse(
+        request,
+        "status.html",
+        {
+            "api_ok": api_ok,
+            "model_ok": model_ok,
+            "model_info": model_info,
+            "api_error": api_error,
+            "docker": environment["docker"],
+            "kubernetes": environment["kubernetes"],
+            "github_badge_url": get_github_actions_badge_url(),
+        },
+    )
