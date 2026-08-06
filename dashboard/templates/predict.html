@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Predict — MLOps Dashboard{% endblock %}
+{% block content %}
+<h1 class="mb-4">Prediction</h1>
+
+{% if metadata %}
+<form method="post" action="/predict" class="row g-3">
+  {% for feature in metadata.feature_names %}
+  <div class="col-md-4">
+    <label class="form-label">{{ feature }} <span class="text-muted">({{ metadata.feature_dtypes[feature] }})</span></label>
+    {% if input_types[feature] == "checkbox" %}
+    <input type="checkbox" class="form-check-input d-block" name="{{ feature }}">
+    {% else %}
+    <input type="{{ input_types[feature] }}" step="any" class="form-control" name="{{ feature }}" value="{{ form_values.get(feature, '') }}" required>
+    {% endif %}
+  </div>
+  {% endfor %}
+  <div class="col-12">
+    <button type="submit" class="btn btn-primary">Predict</button>
+  </div>
+</form>
+
+{% if prediction is not none %}
+<div class="card mt-4">
+  <div class="card-body">
+    <h5 class="card-title">Result</h5>
+    <p class="mb-1"><strong>Prediction:</strong> {{ prediction }}</p>
+    <p class="mb-1"><strong>Confidence:</strong> {{ confidence if confidence is not none else "not available from current API" }}</p>
+    <p class="mb-0"><strong>Response time:</strong> {{ "%.1f"|format(response_time_ms) }} ms</p>
+  </div>
+</div>
+{% endif %}
+
+{% if predict_error %}
+<div class="alert alert-danger mt-3">{{ predict_error }}</div>
+{% endif %}
+
+{% else %}
+<p class="text-muted">Unable to reach the API — see the warning above.</p>
+{% endif %}
+{% endblock %}
