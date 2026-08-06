@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-serving
+  namespace: mlops-kubeflow-pipeline
+  labels:
+    app: model-serving
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: model-serving
+  template:
+    metadata:
+      labels:
+        app: model-serving
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # Kubernetes can't resolve a named USER (appuser) from the image
+        # to verify it's non-root at admission time — it needs a numeric
+        # UID. 999 is appuser's actual UID, confirmed earlier via
+        # `docker exec ... id -u` against this same image.
+        runAsUser: 999
+      containers:
+        - name: model-serving
+          image: mlops-kubeflow-pipeline-serving:v1
+          # IfNotPresent is required here: kind has no registry to pull
+          # from, and Kubernetes defaults to "Always" for any image not
+          # pinned to an immutable digest, which would otherwise cause
+          # an ImagePullBackOff against a local-only image.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3

@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1
+
+# ---------------------------------------------------------------------
+# Stage 1: builder — installs pipeline-only dependencies (matplotlib,
+# PyYAML, kfp — none of which belong in the serving image) into an
+# isolated venv, discarded after this stage.
+# ---------------------------------------------------------------------
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+COPY requirements/ requirements/
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN pip install --no-cache-dir -r requirements/pipeline.txt
+
+# ---------------------------------------------------------------------
+# Stage 2: runtime — the full src/ tree (every KFP component below
+# imports from it) plus the installed venv. No app/ (serving-only),
+# no baked-in model/artifacts (those are produced fresh per pipeline
+# run, not baked in).
+# ---------------------------------------------------------------------
+FROM python:3.11-slim AS runtime
+
+RUN groupadd --system appuser \
+    && useradd --system --gid appuser --create-home --home-dir /home/appuser appuser
+
+WORKDIR /app
+
+COPY --from=builder /opt/venv /opt/venv
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+COPY src/ src/
+
+RUN chown -R appuser:appuser /app
+
+USER appuser

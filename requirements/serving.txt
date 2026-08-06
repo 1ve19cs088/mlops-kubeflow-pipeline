@@ -1,0 +1,7 @@
+# Everything the FastAPI serving layer (app/) needs at runtime, and
+# nothing else — this is exactly what the Docker serving image installs.
+-r base.txt
+
+fastapi==0.141.1
+uvicorn==0.52.1
+pydantic==2.13.4

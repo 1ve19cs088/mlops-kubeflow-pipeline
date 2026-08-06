@@ -1,0 +1,19 @@
+# Build-context hygiene — controls what Docker's daemon even sees,
+# not what ends up in the final image (the Dockerfile's explicit,
+# selective COPY instructions already control that). This just keeps
+# every `docker build` invocation fast by not uploading large or
+# irrelevant directories.
+
+.venv/
+.git/
+tests/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+data/
+docs/
+screenshots/
+kubernetes/
+docker/
+.claude/

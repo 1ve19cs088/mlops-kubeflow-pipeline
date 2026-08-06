@@ -1,0 +1,65 @@
+# syntax=docker/dockerfile:1
+
+# ---------------------------------------------------------------------
+# Stage 1: builder — installs serving-only dependencies into an
+# isolated venv. This entire stage (pip, its cache, any build tooling
+# a wheel might need) is discarded — never copied into the final image.
+# ---------------------------------------------------------------------
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+COPY requirements/ requirements/
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN pip install --no-cache-dir -r requirements/serving.txt
+
+# ---------------------------------------------------------------------
+# Stage 2: runtime — a fresh base image containing only the installed
+# venv, application code, and the baked-in model/contract artifacts.
+# No compilers, no pip cache, no pipeline-only or test-only packages.
+# ---------------------------------------------------------------------
+FROM python:3.11-slim AS runtime
+
+RUN groupadd --system appuser \
+    && useradd --system --gid appuser --create-home --home-dir /home/appuser appuser
+
+WORKDIR /app
+
+COPY --from=builder /opt/venv /opt/venv
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# app/ only ever imports src/config/settings.py from the whole src/
+# tree; copying the entire src/config/ directory (not just settings.py)
+# is a deliberate maintainability choice over micro-optimizing size.
+COPY app/ app/
+COPY src/config/ src/config/
+
+# Baked in at build time (see README's "Building the serving image"
+# for the prerequisite pipeline run this depends on).
+COPY model/model.pkl model/model.pkl
+COPY artifacts/training_report.json artifacts/metrics.json artifacts/
+
+RUN chown -R appuser:appuser /app
+
+USER appuser
+
+EXPOSE 8000
+
+# Uses Python's own urllib rather than installing curl, to keep the
+# runtime image free of extra OS packages. Kubernetes will not consume
+# this instruction directly — it defines its own liveness/readiness
+# probes — but this is what standalone `docker run`/Compose rely on.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health')"]
+
+# Exec form (JSON array), not shell form: uvicorn runs directly as
+# PID 1, so it receives SIGTERM directly for graceful shutdown during
+# container stop / Kubernetes rolling updates, rather than a wrapping
+# shell potentially swallowing the signal.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

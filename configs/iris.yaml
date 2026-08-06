@@ -1,0 +1,29 @@
+dataset:
+  name: iris
+
+  source:
+    type: sklearn
+    loader: iris
+
+schema:
+  target_column: species
+
+  expected_columns:
+    - sepal_length_cm
+    - sepal_width_cm
+    - petal_length_cm
+    - petal_width_cm
+    - species
+
+  valid_labels:
+    - setosa
+    - versicolor
+    - virginica
+
+training:
+  test_size: 0.2
+  random_state: 42
+
+model:
+  algorithm: RandomForestClassifier
+  version: v1.0.0

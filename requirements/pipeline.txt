@@ -1,0 +1,11 @@
+# Everything the offline training pipeline (src/) needs at runtime —
+# matplotlib for confusion matrix plotting, PyYAML for config loading,
+# kfp for Kubeflow pipeline compilation, docker for kfp.local's
+# DockerRunner (local pipeline execution). None of this belongs in the
+# serving image.
+-r base.txt
+
+matplotlib==3.11.1
+PyYAML==6.0.3
+kfp==2.17.0
+docker==7.2.0

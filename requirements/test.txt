@@ -1,0 +1,9 @@
+# Full development/test environment — the union of serving and
+# pipeline dependencies, plus test-only tooling. This is what the
+# pytest suite (covering both src/ and app/) needs installed locally
+# or in CI. Never installed into a production image.
+-r serving.txt
+-r pipeline.txt
+
+pytest==9.1.1
+httpx==0.28.1

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+data/processed/
+model/
+artifacts/
+
+pipeline/local_outputs/
+pipeline/compiled/
+
+# Claude Code
+.claude/
