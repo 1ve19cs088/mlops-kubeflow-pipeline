@@ -17,9 +17,15 @@ from sklearn.ensemble import RandomForestClassifier
 
 import app.contract as contract_module
 import app.model_loader as model_loader_module
-import app.main as main_module
-from app.main import create_app
 from app.model_loader import ModelBundle, get_model_bundle
+
+# app.main is deliberately NOT imported at module level: importing it
+# executes its bottom-line `app = create_app()`, which needs
+# artifacts/training_report.json to exist via the REAL ARTIFACT_DIR.
+# Each function below imports it locally, after ARTIFACT_DIR has
+# already been monkeypatched to the fixture path, so that first import
+# (and app.main's own create_app() call) resolves against fixture data
+# instead of a file that may not exist on a fresh checkout.
 
 
 def _write_fixture_artifacts(tmp_path):
@@ -87,6 +93,8 @@ def _build_test_app(tmp_path, monkeypatch):
     monkeypatch.setattr(contract_module, "ARTIFACT_DIR", artifact_dir)
     monkeypatch.setattr(model_loader_module, "ARTIFACT_DIR", artifact_dir)
     monkeypatch.setattr(model_loader_module, "MODEL_DIR", model_dir)
+
+    from app.main import create_app
 
     return create_app()
 
@@ -241,6 +249,9 @@ def test_model_bundle_loaded_exactly_once_at_startup(tmp_path, monkeypatch):
     monkeypatch.setattr(contract_module, "ARTIFACT_DIR", artifact_dir)
     monkeypatch.setattr(model_loader_module, "ARTIFACT_DIR", artifact_dir)
     monkeypatch.setattr(model_loader_module, "MODEL_DIR", model_dir)
+
+    import app.main as main_module
+    from app.main import create_app
 
     call_count = {"count": 0}
     original_load_model_bundle = model_loader_module.load_model_bundle
