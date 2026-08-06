@@ -16,9 +16,10 @@ from pipeline.kubeflow_pipeline import mlops_pipeline
 
 DEFAULT_CONFIG_FILENAME = "iris.yaml"
 
-kfp.local.init(runner=kfp.local.DockerRunner(), pipeline_root="./pipeline/local_outputs")
 
 if __name__ == "__main__":
+    kfp.local.init(runner=kfp.local.DockerRunner(), pipeline_root="./pipeline/local_outputs")
+
     config_filename = os.environ.get("CONFIG_FILE", DEFAULT_CONFIG_FILENAME)
     config = load_yaml(CONFIG_DIR / config_filename)
 
