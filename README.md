@@ -39,3 +39,52 @@ Verify:
 ```bash
 curl http://localhost:8000/v1/health
 ```
+
+## Dashboard
+
+A lightweight web dashboard (`dashboard/`) sits on top of the serving
+API as a **separate process** — it never imports `app/` or `src/`,
+only calls the existing `/v1/*` endpoints over HTTP:
+
+```
+Browser
+   ↓
+Dashboard UI (dashboard/, its own FastAPI app + Jinja2 templates)
+   ↓  HTTP calls via dashboard/api_client.py
+Existing FastAPI endpoints (app/, /v1/health, /v1/metadata, /v1/metrics, /v1/predict, /v1/predict/batch)
+   ↓
+Current model (model/model.pkl)
+```
+
+Every page duplicates zero business logic — it renders whatever the
+existing API already returns. The prediction form is generated
+entirely from `/v1/metadata`'s `feature_names`/`feature_dtypes`, so a
+different dataset with a different number of features needs no
+template changes. The Deployment page reads this repo's own
+`kubernetes/*.yaml` manifests and safe local environment markers
+(`/.dockerenv`, the Kubernetes serviceaccount path) rather than
+querying a live cluster, consistent with this project's rule that
+automated code never talks to any Kubernetes cluster except the local
+`kind-ai-agent` one.
+
+**Pages:** Home, Model Metrics, Prediction, Batch Prediction,
+Deployment, System Status.
+
+### Running it
+
+Requires the serving API to be running first (see above), then:
+```bash
+pip install -r requirements/dashboard.txt
+uvicorn dashboard.main:app --host 127.0.0.1 --port 8080
+```
+Open `http://127.0.0.1:8080`.
+
+By default the dashboard calls the API at `http://localhost:8000`.
+Override with:
+```bash
+export API_BASE_URL=http://localhost:8000
+```
+
+### Screenshots
+
+_TODO: add screenshots of each page here (Home, Metrics, Predict, Batch Predict, Deployment, System Status)._
