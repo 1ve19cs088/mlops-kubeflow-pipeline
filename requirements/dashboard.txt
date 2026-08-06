@@ -1,0 +1,10 @@
+# Everything the dashboard UI needs at runtime. It only ever talks to
+# the existing serving API over HTTP (via ApiClient) — it never
+# imports app/ or src/, so it can't duplicate or drift from their logic.
+-r base.txt
+
+fastapi==0.141.1
+uvicorn==0.52.1
+httpx==0.28.1
+jinja2==3.1.6
+python-multipart==0.0.32

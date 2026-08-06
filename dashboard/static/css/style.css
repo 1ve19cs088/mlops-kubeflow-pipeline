@@ -1,0 +1,9 @@
+.card {
+    height: 100%;
+}
+
+.card .text-muted {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}

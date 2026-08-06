@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Home — MLOps Dashboard{% endblock %}
+{% block content %}
+<h1 class="mb-4">MLOps Kubeflow Pipeline</h1>
+
+{% if health %}
+<div class="row g-3">
+  <div class="col-md-3">
+    <div class="card"><div class="card-body">
+      <h6 class="text-muted">API Health</h6>
+      <span class="badge bg-success">{{ health.status }}</span>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card"><div class="card-body">
+      <h6 class="text-muted">Model Version</h6>
+      <p class="mb-0">{{ metadata.model_version if metadata else "unknown" }}</p>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card"><div class="card-body">
+      <h6 class="text-muted">Dataset</h6>
+      <p class="mb-0">{{ metrics.dataset if metrics else "unknown" }}</p>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card"><div class="card-body">
+      <h6 class="text-muted">Algorithm</h6>
+      <p class="mb-0">{{ metadata.algorithm if metadata else "unknown" }}</p>
+    </div></div>
+  </div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-md-4">
+    <div class="card"><div class="card-body">
+      <h6 class="text-muted">Framework</h6>
+      <p class="mb-0">{{ metadata.framework if metadata else "unknown" }}</p>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card"><div class="card-body">
+      <h6 class="text-muted">Training Timestamp</h6>
+      <p class="mb-0">{{ metadata.trained_at if metadata else "unknown" }}</p>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card"><div class="card-body">
+      <h6 class="text-muted">Deployment Status</h6>
+      <span class="badge bg-success">Reachable</span>
+    </div></div>
+  </div>
+</div>
+{% else %}
+<p class="text-muted">Unable to reach the API — see the warning above.</p>
+{% endif %}
+{% endblock %}
