@@ -52,8 +52,13 @@
             <ul class="dropdown-menu dropdown-menu-end">
               <li><a class="dropdown-item" href="/models/{{ model_name }}/versions/{{ v.version }}/actions/promote">Promote to Production</a></li>
               <li><a class="dropdown-item" href="/models/{{ model_name }}/versions/{{ v.version }}/actions/archive">Archive Version</a></li>
+              {% if v.deployable %}
               <li><a class="dropdown-item" href="/models/{{ model_name }}/versions/{{ v.version }}/actions/rollback">Rollback to this Version</a></li>
               <li><a class="dropdown-item" href="/models/{{ model_name }}/versions/{{ v.version }}/actions/deploy">Deploy</a></li>
+              {% else %}
+              <li><span class="dropdown-item disabled text-muted" title="{{ v.deploy_reason }}">Rollback (unavailable)</span></li>
+              <li><span class="dropdown-item disabled text-muted" title="{{ v.deploy_reason }}">Deploy (unavailable)</span></li>
+              {% endif %}
             </ul>
           </div>
         </td>

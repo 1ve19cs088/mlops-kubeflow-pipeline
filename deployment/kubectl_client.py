@@ -12,6 +12,7 @@ never need to handle a raised exception.
 
 import subprocess
 from dataclasses import dataclass
+from typing import Optional
 
 APPLY_TIMEOUT_SECONDS = 30
 ROLLOUT_TIMEOUT_SECONDS = 120
@@ -73,6 +74,42 @@ def wait_for_rollout(
 
     output = (result.stdout + result.stderr).strip()
     return KubectlResult(success=result.returncode == 0, output=output)
+
+
+def get_deployment_image(
+    deployment_name: str,
+    namespace: str,
+    timeout_seconds: int = APPLY_TIMEOUT_SECONDS,
+) -> Optional[str]:
+    """
+    Reads the container image the live Deployment is actually running
+    right now — a real `kubectl get` query, not config, not a cache.
+    Returns None (never guessed, never raised) if kubectl fails, the
+    Deployment doesn't exist, or the cluster isn't reachable.
+    """
+
+    try:
+        result = subprocess.run(
+            [
+                "kubectl",
+                "get",
+                f"deployment/{deployment_name}",
+                "-n",
+                namespace,
+                "-o",
+                "jsonpath={.spec.template.spec.containers[0].image}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    return result.stdout.strip() or None
 
 
 def rollout_undo(

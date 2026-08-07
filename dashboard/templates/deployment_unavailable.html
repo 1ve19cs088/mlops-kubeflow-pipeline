@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ action|capitalize }} unavailable — {{ model_name }} v{{ version }} — MLOps Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="mb-0">{{ action|capitalize }} unavailable</h1>
+  <a href="/models/{{ model_name }}" class="btn btn-outline-secondary btn-sm">Back to {{ model_name }}</a>
+</div>
+
+<div class="alert alert-warning">
+  <strong>{{ action|capitalize }} is disabled for {{ model_name }} version {{ version }}.</strong>
+</div>
+
+<p>{{ reason }}</p>
+{% endblock %}

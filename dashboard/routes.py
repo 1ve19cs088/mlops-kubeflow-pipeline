@@ -29,7 +29,6 @@ from dashboard.api_client import (
     ApiValidationError,
     get_api_client,
 )
-from dashboard.deployment_actions import get_action
 from dashboard.deployment_info import get_deployment_info
 from dashboard.deployment_pipeline_status import get_deployment_pipeline_status
 from dashboard.dtype_utils import coerce_value, html_input_type
@@ -402,6 +401,20 @@ def status_page(
             "latest_created_time": None,
         }
 
+    current_deployment = deployment_service.get_current_deployment()
+
+    current_deployment_mlflow_version = None
+    if mlflow_ok:
+        try:
+            current_deployment_mlflow_version = _find_mlflow_version_for_commit(
+                mlflow_client, current_deployment.tag
+            )
+        except Exception:
+            current_deployment_mlflow_version = None
+
+    deployment_history = deployment_service.get_deployment_history()
+    last_deployment = deployment_history[0] if deployment_history else None
+
     return templates.TemplateResponse(
         request,
         "status.html",
@@ -418,12 +431,51 @@ def status_page(
             "registry": registry,
             "deployment_pipeline": get_deployment_pipeline_status(),
             "deployment_status": deployment_service.get_status(),
+            "current_deployment": current_deployment,
+            "current_deployment_mlflow_version": current_deployment_mlflow_version,
+            "deployment_history": deployment_history,
+            "last_deployment": last_deployment,
         },
     )
 
 
 def _format_timestamp(epoch_millis: int) -> str:
     return datetime.fromtimestamp(epoch_millis / 1000, tz=timezone.utc).isoformat()
+
+
+def _get_version_or_404(mlflow_client: MlflowRegistryClient, model_name: str, version: str):
+    """Looks up one specific version of `model_name`, or 404s."""
+
+    versions = mlflow_client.get_model_versions(model_name)
+    matched = next((v for v in versions if str(v.version) == version), None)
+    if matched is None:
+        raise HTTPException(status_code=404, detail="Model version not found")
+    return matched
+
+
+def _find_mlflow_version_for_commit(mlflow_client: MlflowRegistryClient, git_commit_sha):
+    """
+    Reverse-looks-up which registered model version (if any) was
+    trained from `git_commit_sha`, by scanning every version of every
+    registered model for a matching git-commit tag. Never guessed —
+    returns None if no version's tag matches, including when
+    `git_commit_sha` itself is None (nothing currently deployed, or
+    the deployed tag isn't a commit this registry knows about at all).
+
+    O(models x versions) — deliberately unoptimized: this project's
+    real scale (a handful of models, a few dozen versions) makes an
+    index or cache unwarranted complexity for what's currently a
+    Status-page-only, on-demand lookup.
+    """
+
+    if not git_commit_sha:
+        return None
+
+    for model in mlflow_client.get_registered_models():
+        for version in mlflow_client.get_model_versions(model.name):
+            if mlflow_client.get_git_commit(version.run_id) == git_commit_sha:
+                return {"model_name": model.name, "version": version.version}
+    return None
 
 
 def _build_model_row(mlflow_client: MlflowRegistryClient, model) -> dict:
@@ -456,9 +508,25 @@ def models_list(
     return templates.TemplateResponse(request, "models.html", {"models": rows})
 
 
-def _build_version_row(mlflow_client: MlflowRegistryClient, version) -> dict:
+def _build_version_row(
+    mlflow_client: MlflowRegistryClient,
+    deployment_service: DeploymentService,
+    commit_deployability_cache: dict,
+    version,
+) -> dict:
     metrics = mlflow_client.get_run_metrics(version.run_id)
     params = mlflow_client.get_run_parameters(version.run_id)
+
+    git_commit = mlflow_client.get_git_commit(version.run_id)
+    if git_commit not in commit_deployability_cache:
+        # Memoized per page render only (not cached across requests):
+        # several versions commonly share one commit (e.g. re-running
+        # the pipeline without a new commit), so this avoids one real
+        # GHCR query per version when they'd all resolve identically.
+        commit_deployability_cache[git_commit] = (
+            deployment_service.resolve_deployment_for_commit(git_commit)
+        )
+    deployability = commit_deployability_cache[git_commit]
 
     return {
         "version": version.version,
@@ -472,6 +540,9 @@ def _build_version_row(mlflow_client: MlflowRegistryClient, version) -> dict:
         "dataset": params.get("dataset"),
         "created_time": _format_timestamp(version.creation_timestamp),
         "run_id": version.run_id,
+        "git_commit": git_commit,
+        "deployable": deployability.deployable,
+        "deploy_reason": deployability.reason,
     }
 
 
@@ -480,9 +551,14 @@ def model_detail(
     request: Request,
     model_name: str,
     mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+    deployment_service: DeploymentService = Depends(get_deployment_service),
 ):
     versions = mlflow_client.get_model_versions(model_name)
-    rows = [_build_version_row(mlflow_client, version) for version in versions]
+    commit_deployability_cache = {}
+    rows = [
+        _build_version_row(mlflow_client, deployment_service, commit_deployability_cache, version)
+        for version in versions
+    ]
 
     return templates.TemplateResponse(
         request,
@@ -582,10 +658,7 @@ def download_artifact(
     artifact_path: str,
     mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
 ):
-    versions = mlflow_client.get_model_versions(model_name)
-    matched = next((v for v in versions if str(v.version) == version), None)
-    if matched is None:
-        raise HTTPException(status_code=404, detail="Model version not found")
+    matched = _get_version_or_404(mlflow_client, model_name, version)
 
     try:
         content = mlflow_client.get_artifact_bytes(matched.run_id, artifact_path)
@@ -602,30 +675,250 @@ def download_artifact(
     )
 
 
-@router.get("/models/{model_name}/versions/{version}/actions/{action_key}")
-def version_action_placeholder(
+def _deployment_action_confirm(
     request: Request,
     model_name: str,
     version: str,
-    action_key: str,
-    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+    action: str,
+    mlflow_client: MlflowRegistryClient,
+    deployment_service: DeploymentService,
 ):
-    action = get_action(action_key)
-    if action is None:
-        raise HTTPException(status_code=404, detail="Unknown action")
+    """
+    Shared GET handler for both Deploy and Rollback: mechanically
+    identical (both resolve a version's git commit to a published
+    image and, if confirmed, call deployment_service.deploy() with
+    it) — only the confirmation copy differs, driven by `action`.
+    """
 
-    versions = mlflow_client.get_model_versions(model_name)
-    matched = next((v for v in versions if str(v.version) == version), None)
-    if matched is None:
-        raise HTTPException(status_code=404, detail="Model version not found")
+    matched = _get_version_or_404(mlflow_client, model_name, version)
+    git_commit = mlflow_client.get_git_commit(matched.run_id)
+    check = deployment_service.resolve_deployment_for_commit(git_commit)
+
+    if not check.deployable:
+        return templates.TemplateResponse(
+            request,
+            "deployment_unavailable.html",
+            {
+                "action": action,
+                "model_name": model_name,
+                "version": version,
+                "reason": check.reason,
+            },
+            status_code=409,
+        )
+
+    current = deployment_service.get_current_deployment()
+    current_mlflow_version = _find_mlflow_version_for_commit(mlflow_client, current.tag)
+    deployment_status = deployment_service.get_status()
 
     return templates.TemplateResponse(
         request,
-        "action_placeholder.html",
+        "deployment_confirm.html",
         {
+            "action": action,
             "model_name": model_name,
             "version": version,
-            "action": action,
+            "git_commit": git_commit,
+            "image": check.image,
+            "deployment_target": deployment_status.deployment_target,
+            "current_image": current.image,
+            "current_mlflow_version": current_mlflow_version,
         },
-        status_code=501,
+    )
+
+
+def _deployment_action_execute(
+    request: Request,
+    model_name: str,
+    version: str,
+    action: str,
+    mlflow_client: MlflowRegistryClient,
+    deployment_service: DeploymentService,
+):
+    """
+    Shared POST handler for both Deploy and Rollback. Re-verifies
+    deployability rather than trusting the GET confirmation page's
+    state — it's possible (if unlikely) for the published image to
+    have disappeared between viewing the confirmation page and
+    submitting it.
+    """
+
+    matched = _get_version_or_404(mlflow_client, model_name, version)
+    git_commit = mlflow_client.get_git_commit(matched.run_id)
+    check = deployment_service.resolve_deployment_for_commit(git_commit)
+
+    if not check.deployable:
+        return templates.TemplateResponse(
+            request,
+            "deployment_unavailable.html",
+            {
+                "action": action,
+                "model_name": model_name,
+                "version": version,
+                "reason": check.reason,
+            },
+            status_code=409,
+        )
+
+    result = deployment_service.deploy(git_commit)
+
+    return templates.TemplateResponse(
+        request,
+        "deployment_result.html",
+        {
+            "action": action,
+            "model_name": model_name,
+            "version": version,
+            "result": result,
+        },
+    )
+
+
+@router.get("/models/{model_name}/versions/{version}/actions/deploy")
+def deploy_confirm(
+    request: Request,
+    model_name: str,
+    version: str,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+    deployment_service: DeploymentService = Depends(get_deployment_service),
+):
+    return _deployment_action_confirm(
+        request, model_name, version, "deploy", mlflow_client, deployment_service
+    )
+
+
+@router.post("/models/{model_name}/versions/{version}/actions/deploy")
+def deploy_execute(
+    request: Request,
+    model_name: str,
+    version: str,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+    deployment_service: DeploymentService = Depends(get_deployment_service),
+):
+    return _deployment_action_execute(
+        request, model_name, version, "deploy", mlflow_client, deployment_service
+    )
+
+
+@router.get("/models/{model_name}/versions/{version}/actions/rollback")
+def rollback_confirm(
+    request: Request,
+    model_name: str,
+    version: str,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+    deployment_service: DeploymentService = Depends(get_deployment_service),
+):
+    return _deployment_action_confirm(
+        request, model_name, version, "rollback", mlflow_client, deployment_service
+    )
+
+
+@router.post("/models/{model_name}/versions/{version}/actions/rollback")
+def rollback_execute(
+    request: Request,
+    model_name: str,
+    version: str,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+    deployment_service: DeploymentService = Depends(get_deployment_service),
+):
+    return _deployment_action_execute(
+        request, model_name, version, "rollback", mlflow_client, deployment_service
+    )
+
+
+@router.get("/models/{model_name}/versions/{version}/actions/promote")
+def promote_confirm(
+    request: Request,
+    model_name: str,
+    version: str,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+):
+    matched = _get_version_or_404(mlflow_client, model_name, version)
+
+    return templates.TemplateResponse(
+        request,
+        "stage_transition_confirm.html",
+        {
+            "action": "promote",
+            "model_name": model_name,
+            "version": version,
+            "current_stage": matched.current_stage,
+        },
+    )
+
+
+@router.post("/models/{model_name}/versions/{version}/actions/promote")
+def promote_execute(
+    request: Request,
+    model_name: str,
+    version: str,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+):
+    _get_version_or_404(mlflow_client, model_name, version)
+
+    try:
+        mlflow_client.promote_version(model_name, version)
+        success, error = True, None
+    except Exception as exc:
+        success, error = False, str(exc)
+
+    return templates.TemplateResponse(
+        request,
+        "stage_transition_result.html",
+        {
+            "action": "promote",
+            "model_name": model_name,
+            "version": version,
+            "success": success,
+            "error": error,
+        },
+    )
+
+
+@router.get("/models/{model_name}/versions/{version}/actions/archive")
+def archive_confirm(
+    request: Request,
+    model_name: str,
+    version: str,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+):
+    matched = _get_version_or_404(mlflow_client, model_name, version)
+
+    return templates.TemplateResponse(
+        request,
+        "stage_transition_confirm.html",
+        {
+            "action": "archive",
+            "model_name": model_name,
+            "version": version,
+            "current_stage": matched.current_stage,
+        },
+    )
+
+
+@router.post("/models/{model_name}/versions/{version}/actions/archive")
+def archive_execute(
+    request: Request,
+    model_name: str,
+    version: str,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+):
+    _get_version_or_404(mlflow_client, model_name, version)
+
+    try:
+        mlflow_client.archive_version(model_name, version)
+        success, error = True, None
+    except Exception as exc:
+        success, error = False, str(exc)
+
+    return templates.TemplateResponse(
+        request,
+        "stage_transition_result.html",
+        {
+            "action": "archive",
+            "model_name": model_name,
+            "version": version,
+            "success": success,
+            "error": error,
+        },
     )

@@ -129,4 +129,84 @@
     <p class="mb-0">{{ deployment_status.current_tag or "Not Published" }}</p>
   </div></div></div>
 </div>
+
+<h5 class="mt-4">Live Deployment</h5>
+<div class="row g-3">
+  <div class="col-md-4"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Current Deployed Image</h6>
+    <p class="mb-0 text-break">{{ current_deployment.image or "Unreachable" }}</p>
+  </div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Current Deployed Git Commit</h6>
+    <p class="mb-0">{{ current_deployment.tag or "Unknown" }}</p>
+  </div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Current Deployed MLflow Version</h6>
+    <p class="mb-0">
+      {% if current_deployment_mlflow_version %}
+        {{ current_deployment_mlflow_version.model_name }} v{{ current_deployment_mlflow_version.version }}
+      {% else %}
+        Not resolvable
+      {% endif %}
+    </p>
+  </div></div></div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-md-6"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Last Deployment Status</h6>
+    {% if last_deployment %}
+    <span class="badge {{ 'bg-success' if last_deployment.success else 'bg-danger' }}">
+      {{ "Success" if last_deployment.success else "Failed" }}
+    </span>
+    <span class="text-muted ms-2">{{ last_deployment.timestamp }}</span>
+    {% else %}
+    <span class="badge bg-secondary">No deployments this session</span>
+    {% endif %}
+  </div></div></div>
+  <div class="col-md-6"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Last Rollback Status</h6>
+    {% if last_deployment and last_deployment.rolled_back %}
+    <span class="badge bg-warning text-dark">Rolled Back</span>
+    {% elif last_deployment %}
+    <span class="badge bg-secondary">Not Triggered</span>
+    {% else %}
+    <span class="badge bg-secondary">No deployments this session</span>
+    {% endif %}
+  </div></div></div>
+</div>
+
+<h6 class="text-muted mt-4">Deployment History (this session)</h6>
+{% if deployment_history %}
+<div class="table-responsive">
+  <table class="table table-sm table-bordered">
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>Image Tag</th>
+        <th>Success</th>
+        <th>Rolled Back</th>
+        <th>Duration</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in deployment_history %}
+      <tr>
+        <td>{{ entry.timestamp }}</td>
+        <td>{{ entry.tag }}</td>
+        <td>
+          <span class="badge {{ 'bg-success' if entry.success else 'bg-danger' }}">
+            {{ "Yes" if entry.success else "No" }}
+          </span>
+        </td>
+        <td>{{ "Yes" if entry.rolled_back else "No" }}</td>
+        <td>{{ "%.2fs"|format(entry.duration_seconds) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-muted">No deployments have been made this session.</p>
+{% endif %}
 {% endblock %}

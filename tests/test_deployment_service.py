@@ -331,3 +331,128 @@ def test_deploy_passes_through_a_custom_timeout_to_both_rollout_waits():
 
     mock_rollout.assert_called_once_with("model-serving", "mlops-kubeflow-pipeline", 30)
     mock_undo.assert_not_called()
+
+
+def test_get_current_deployment_reads_the_live_image_and_splits_the_tag():
+    with (
+        patch(
+            "deployment.service.get_deployment_identity",
+            return_value=("model-serving", "mlops-kubeflow-pipeline"),
+        ),
+        patch(
+            "deployment.service.get_deployment_image",
+            return_value="ghcr.io/1ve19cs088/mlops-kubeflow-pipeline-serving:abc123",
+        ) as mock_image,
+    ):
+        service = DeploymentService(config=_config())
+        current = service.get_current_deployment()
+
+    assert current.image == "ghcr.io/1ve19cs088/mlops-kubeflow-pipeline-serving:abc123"
+    assert current.tag == "abc123"
+    mock_image.assert_called_once_with("model-serving", "mlops-kubeflow-pipeline")
+
+
+def test_get_current_deployment_reports_none_when_cluster_unreachable():
+    with (
+        patch(
+            "deployment.service.get_deployment_identity",
+            return_value=("model-serving", "mlops-kubeflow-pipeline"),
+        ),
+        patch("deployment.service.get_deployment_image", return_value=None),
+    ):
+        service = DeploymentService(config=_config())
+        current = service.get_current_deployment()
+
+    assert current.image is None
+    assert current.tag is None
+
+
+def test_deployment_history_is_empty_until_first_deploy_call():
+    service = DeploymentService(config=_config())
+
+    assert service.get_deployment_history() == []
+
+
+def test_deploy_records_a_history_entry_newest_first():
+    with (
+        patch("deployment.service.build_manifest_bundle", return_value=_mock_bundle()),
+        patch(
+            "deployment.service.apply_manifest",
+            return_value=KubectlResult(success=True, output="configured"),
+        ),
+        patch(
+            "deployment.service.wait_for_rollout",
+            return_value=KubectlResult(success=True, output="successfully rolled out"),
+        ),
+        patch("deployment.service.rollout_undo"),
+    ):
+        service = DeploymentService(config=_config())
+        service.deploy("first-tag")
+        service.deploy("second-tag")
+
+    history = service.get_deployment_history()
+
+    assert len(history) == 2
+    assert history[0].tag == "second-tag"
+    assert history[1].tag == "first-tag"
+    assert history[0].success is True
+    assert history[0].rolled_back is False
+    assert history[0].timestamp
+
+
+def test_deploy_records_history_even_when_it_fails_and_rolls_back():
+    with (
+        patch("deployment.service.build_manifest_bundle", return_value=_mock_bundle()),
+        patch(
+            "deployment.service.apply_manifest",
+            return_value=KubectlResult(success=True, output="configured"),
+        ),
+        patch(
+            "deployment.service.wait_for_rollout",
+            side_effect=[
+                KubectlResult(success=False, output="timed out"),
+                KubectlResult(success=True, output="successfully rolled out"),
+            ],
+        ),
+        patch(
+            "deployment.service.rollout_undo",
+            return_value=KubectlResult(success=True, output="rolled back"),
+        ),
+    ):
+        service = DeploymentService(config=_config())
+        service.deploy("broken-tag")
+
+    history = service.get_deployment_history()
+
+    assert len(history) == 1
+    assert history[0].success is False
+    assert history[0].rolled_back is True
+
+
+def test_get_deployment_service_returns_the_same_shared_instance_every_time():
+    first = get_deployment_service()
+    second = get_deployment_service()
+
+    assert first is second
+
+
+def test_a_manually_constructed_deployment_service_has_its_own_independent_history():
+    with (
+        patch("deployment.service.build_manifest_bundle", return_value=_mock_bundle()),
+        patch(
+            "deployment.service.apply_manifest",
+            return_value=KubectlResult(success=True, output="configured"),
+        ),
+        patch(
+            "deployment.service.wait_for_rollout",
+            return_value=KubectlResult(success=True, output="successfully rolled out"),
+        ),
+        patch("deployment.service.rollout_undo"),
+    ):
+        standalone = DeploymentService(config=_config())
+        standalone.deploy("some-tag")
+
+    assert len(standalone.get_deployment_history()) == 1
+    # The shared singleton (used by real dashboard requests) is
+    # untouched by a standalone instance's deploy() call.
+    assert get_deployment_service().get_deployment_history() == []

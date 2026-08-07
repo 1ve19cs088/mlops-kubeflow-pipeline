@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Confirm {{ action|capitalize }} — {{ model_name }} v{{ version }} — MLOps Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="mb-0">Confirm {{ action|capitalize }}</h1>
+  <a href="/models/{{ model_name }}" class="btn btn-outline-secondary btn-sm">Cancel</a>
+</div>
+
+<dl class="row">
+  <dt class="col-sm-3">Model Name</dt>
+  <dd class="col-sm-9">{{ model_name }}</dd>
+
+  {% if action == "rollback" %}
+  <dt class="col-sm-3">Current Production Version</dt>
+  <dd class="col-sm-9">
+    {% if current_mlflow_version %}
+      {{ current_mlflow_version.model_name }} v{{ current_mlflow_version.version }} (<code>{{ current_image }}</code>)
+    {% else %}
+      Unknown — {{ current_image or "no live deployment detected" }}
+    {% endif %}
+  </dd>
+
+  <dt class="col-sm-3">Rollback Target</dt>
+  <dd class="col-sm-9">{{ model_name }} v{{ version }}</dd>
+  {% else %}
+  <dt class="col-sm-3">Version</dt>
+  <dd class="col-sm-9">{{ version }}</dd>
+  {% endif %}
+
+  <dt class="col-sm-3">Git Commit</dt>
+  <dd class="col-sm-9"><code>{{ git_commit }}</code></dd>
+
+  <dt class="col-sm-3">Image</dt>
+  <dd class="col-sm-9"><code>{{ image }}</code></dd>
+
+  <dt class="col-sm-3">Deployment Target</dt>
+  <dd class="col-sm-9">{{ deployment_target }}</dd>
+
+  <dt class="col-sm-3">Rollback Protection</dt>
+  <dd class="col-sm-9">
+    <span class="badge bg-success">Enabled</span>
+    — automatic rollback runs if this rollout fails.
+  </dd>
+
+  {% if action == "rollback" %}
+  <dt class="col-sm-3">Reason</dt>
+  <dd class="col-sm-9">
+    This redeploys an earlier version, reverting whatever is currently running to it.
+  </dd>
+  {% endif %}
+</dl>
+
+<form method="post" action="/models/{{ model_name }}/versions/{{ version }}/actions/{{ action }}" class="d-flex gap-2">
+  <a href="/models/{{ model_name }}" class="btn btn-outline-secondary">Cancel</a>
+  <button type="submit" class="btn btn-primary">Confirm {{ action|capitalize }}</button>
+</form>
+{% endblock %}

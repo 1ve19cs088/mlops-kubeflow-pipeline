@@ -23,6 +23,18 @@ SERVICE_MANIFEST = MANIFESTS_DIR / "service.yaml"
 HPA_MANIFEST = MANIFESTS_DIR / "hpa.yaml"
 
 
+def get_deployment_identity() -> tuple[str, str]:
+    """
+    The Deployment's name and namespace, read directly from
+    kubernetes/deployment.yaml — for read-only lookups (e.g. querying
+    the live cluster for its current image) that don't need to patch
+    an image at all.
+    """
+
+    deployment = yaml.safe_load(DEPLOYMENT_MANIFEST.read_text())
+    return deployment["metadata"]["name"], deployment["metadata"]["namespace"]
+
+
 def build_manifest_bundle(image: str) -> tuple[str, str, str]:
     """
     Returns (manifest_yaml, deployment_name, namespace).

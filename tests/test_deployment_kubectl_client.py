@@ -8,7 +8,12 @@ cluster, and no Docker daemon are needed to run this suite.
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from deployment.kubectl_client import apply_manifest, rollout_undo, wait_for_rollout
+from deployment.kubectl_client import (
+    apply_manifest,
+    get_deployment_image,
+    rollout_undo,
+    wait_for_rollout,
+)
 
 
 def _completed_process(returncode=0, stdout="", stderr=""):
@@ -146,3 +151,49 @@ def test_rollout_undo_handles_timeout():
         result = rollout_undo("model-serving", "mlops-kubeflow-pipeline")
 
     assert result.success is False
+
+
+def test_get_deployment_image_returns_the_image_on_success():
+    with patch(
+        "subprocess.run",
+        return_value=_completed_process(
+            0, stdout="ghcr.io/1ve19cs088/mlops-kubeflow-pipeline-serving:abc123"
+        ),
+    ) as mock_run:
+        image = get_deployment_image("model-serving", "mlops-kubeflow-pipeline")
+
+    assert image == "ghcr.io/1ve19cs088/mlops-kubeflow-pipeline-serving:abc123"
+    args, kwargs = mock_run.call_args
+    assert args[0] == [
+        "kubectl",
+        "get",
+        "deployment/model-serving",
+        "-n",
+        "mlops-kubeflow-pipeline",
+        "-o",
+        "jsonpath={.spec.template.spec.containers[0].image}",
+    ]
+
+
+def test_get_deployment_image_returns_none_when_deployment_not_found():
+    with patch(
+        "subprocess.run",
+        return_value=_completed_process(1, stderr="Error from server (NotFound)"),
+    ):
+        image = get_deployment_image("does-not-exist", "mlops-kubeflow-pipeline")
+
+    assert image is None
+
+
+def test_get_deployment_image_returns_none_when_output_is_empty():
+    with patch("subprocess.run", return_value=_completed_process(0, stdout="")):
+        image = get_deployment_image("model-serving", "mlops-kubeflow-pipeline")
+
+    assert image is None
+
+
+def test_get_deployment_image_handles_kubectl_not_found():
+    with patch("subprocess.run", side_effect=FileNotFoundError("kubectl not found")):
+        image = get_deployment_image("model-serving", "mlops-kubeflow-pipeline")
+
+    assert image is None

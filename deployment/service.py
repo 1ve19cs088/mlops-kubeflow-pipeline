@@ -1,25 +1,32 @@
 """
 DeploymentService: the single point other code goes through to ask
 "what would this project deploy, and where would it go", "what's
-actually published right now", and — as of this stage — to actually
-deploy a published image to the cluster (with an automatic rollback
-safety net if that deploy fails).
+actually published right now", "what's actually running right now",
+and to actually deploy a published image to the cluster (with an
+automatic rollback safety net if that deploy fails).
 
-Configuration fields come from DeploymentConfig; publish-status comes
-from a real, anonymous registry query; deploy() applies this
-project's own committed Kubernetes manifests via kubectl and waits
-for the rollout. Nothing here is hardcoded or faked, and no
-shell/Docker/Kubernetes call happens anywhere except inside
+Configuration fields come from DeploymentConfig; publish-status and
+current-cluster-state come from real, live queries (an anonymous
+registry lookup, a `kubectl get`); deploy() applies this project's own
+committed Kubernetes manifests via kubectl and waits for the rollout.
+Nothing here is hardcoded or faked, and no shell/Docker/Kubernetes
+call happens anywhere except inside get_current_deployment() and
 deploy() — every other method stays read-only.
 """
 
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Optional
 
 from deployment.config import DeploymentConfig, load_deployment_config
-from deployment.kubectl_client import apply_manifest, rollout_undo, wait_for_rollout
-from deployment.manifests import build_manifest_bundle
+from deployment.kubectl_client import (
+    apply_manifest,
+    get_deployment_image,
+    rollout_undo,
+    wait_for_rollout,
+)
+from deployment.manifests import build_manifest_bundle, get_deployment_identity
 from deployment.registry_client import get_latest_published_image, get_published_image
 
 
@@ -45,6 +52,33 @@ class DeployabilityCheck:
 
 
 @dataclass(frozen=True)
+class CurrentDeployment:
+    """
+    What the live Deployment is actually running right now, read
+    directly from the cluster. `tag` is whatever's after the last ":"
+    in `image` — for anything deployed through this project's own
+    deploy(), that's a git commit SHA, but this dataclass has no
+    opinion about that; it's just string-splitting the image
+    reference. Resolving `tag` back to an MLflow model version (if
+    any) is the caller's job, via MlflowRegistryClient — this class
+    stays exactly as MLflow-agnostic as the rest of this module.
+    """
+
+    image: Optional[str]
+    tag: Optional[str]
+
+
+@dataclass(frozen=True)
+class DeploymentHistoryEntry:
+    timestamp: str
+    image: str
+    tag: str
+    success: bool
+    rolled_back: bool
+    duration_seconds: float
+
+
+@dataclass(frozen=True)
 class DeploymentResult:
     success: bool
     image: str
@@ -64,6 +98,14 @@ class DeploymentResult:
 class DeploymentService:
     def __init__(self, config: Optional[DeploymentConfig] = None):
         self._config = config or load_deployment_config()
+        # This process's deploy() calls so far — never persisted,
+        # cleared the moment the dashboard restarts. Instance-level
+        # (not module-level) so tests constructing their own
+        # DeploymentService never share or pollute this list; the
+        # single shared instance FastAPI's dependency injection hands
+        # out (get_deployment_service(), below) is what makes this
+        # accumulate across real dashboard requests within one run.
+        self._history: list[DeploymentHistoryEntry] = []
 
     def _build_image_reference(self, tag: str) -> str:
         config = self._config
@@ -105,6 +147,47 @@ class DeploymentService:
             image_digest=published_image.digest if published_image else None,
             current_tag=published_image.tag if published_image else None,
         )
+
+    def get_current_deployment(self) -> CurrentDeployment:
+        """
+        A real, live `kubectl get` read of what the model-serving
+        Deployment is actually running right now — never config,
+        never a cache. Returns CurrentDeployment(None, None) if the
+        cluster or Deployment can't be reached, same as every other
+        "nothing to report" case in this module.
+        """
+
+        deployment_name, namespace = get_deployment_identity()
+        image = get_deployment_image(deployment_name, namespace)
+
+        tag = None
+        if image and ":" in image:
+            tag = image.rsplit(":", 1)[-1]
+
+        return CurrentDeployment(image=image, tag=tag)
+
+    def get_deployment_history(self) -> list:
+        """
+        This process's deploy() calls so far, newest first. Empty
+        until the first deploy() call in this run — nothing is ever
+        read from disk here.
+        """
+
+        return list(reversed(self._history))
+
+    def _record(self, result: DeploymentResult) -> DeploymentResult:
+        tag = result.image.rsplit(":", 1)[-1] if ":" in result.image else result.image
+        self._history.append(
+            DeploymentHistoryEntry(
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                image=result.image,
+                tag=tag,
+                success=result.success,
+                rolled_back=result.rolled_back,
+                duration_seconds=result.duration_seconds,
+            )
+        )
+        return result
 
     def resolve_deployment_for_commit(self, git_commit_sha: Optional[str]) -> DeployabilityCheck:
         """
@@ -193,7 +276,7 @@ class DeploymentService:
             # Nothing to roll back: the Deployment's desired state was
             # never actually changed if kubectl rejected the manifest.
             message = f"kubectl apply failed: {apply_result.output}"
-            return DeploymentResult(
+            return self._record(DeploymentResult(
                 success=False,
                 image=image,
                 namespace=namespace,
@@ -201,20 +284,20 @@ class DeploymentService:
                 duration_seconds=time.monotonic() - start,
                 message=message,
                 original_error=message,
-            )
+            ))
 
         rollout_result = wait_for_rollout(deployment_name, namespace, timeout_seconds)
         duration_seconds = time.monotonic() - start
 
         if rollout_result.success:
-            return DeploymentResult(
+            return self._record(DeploymentResult(
                 success=True,
                 image=image,
                 namespace=namespace,
                 deployment_name=deployment_name,
                 duration_seconds=duration_seconds,
                 message=rollout_result.output or "Rollout completed successfully.",
-            )
+            ))
 
         original_error = f"Rollout failed or timed out: {rollout_result.output}"
 
@@ -222,7 +305,7 @@ class DeploymentService:
         undo_result = rollout_undo(deployment_name, namespace)
 
         if not undo_result.success:
-            return DeploymentResult(
+            return self._record(DeploymentResult(
                 success=False,
                 image=image,
                 namespace=namespace,
@@ -234,13 +317,13 @@ class DeploymentService:
                 rollback_duration_seconds=time.monotonic() - rollback_start,
                 rollback_message=f"kubectl rollout undo failed: {undo_result.output}",
                 original_error=original_error,
-            )
+            ))
 
         rollback_rollout_result = wait_for_rollout(deployment_name, namespace, timeout_seconds)
         rollback_duration_seconds = time.monotonic() - rollback_start
 
         if rollback_rollout_result.success:
-            return DeploymentResult(
+            return self._record(DeploymentResult(
                 success=False,
                 image=image,
                 namespace=namespace,
@@ -254,9 +337,9 @@ class DeploymentService:
                     rollback_rollout_result.output or "Rollback completed successfully."
                 ),
                 original_error=original_error,
-            )
+            ))
 
-        return DeploymentResult(
+        return self._record(DeploymentResult(
             success=False,
             image=image,
             namespace=namespace,
@@ -270,10 +353,23 @@ class DeploymentService:
                 f"Rollback rollout failed or timed out: {rollback_rollout_result.output}"
             ),
             original_error=original_error,
-        )
+        ))
+
+
+_shared_deployment_service = DeploymentService()
 
 
 def get_deployment_service() -> DeploymentService:
-    """FastAPI dependency provider — overridable in tests."""
+    """
+    FastAPI dependency provider — overridable in tests.
 
-    return DeploymentService()
+    Returns one shared instance for the life of the dashboard process
+    (not a fresh DeploymentService per request), so deployment history
+    actually accumulates across requests within a running dashboard —
+    "current session only" per this stage's requirement, gone the
+    moment the process restarts. Tests that construct their own
+    DeploymentService(config=...) directly are unaffected; only code
+    going through this provider shares state.
+    """
+
+    return _shared_deployment_service

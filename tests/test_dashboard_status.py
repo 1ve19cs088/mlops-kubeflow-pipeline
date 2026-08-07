@@ -14,7 +14,12 @@ from fastapi.testclient import TestClient
 from dashboard.api_client import ApiUnavailableError, get_api_client
 from dashboard.main import app
 from dashboard.mlflow_client import get_mlflow_client
-from deployment.service import DeploymentStatus, get_deployment_service
+from deployment.service import (
+    CurrentDeployment,
+    DeploymentHistoryEntry,
+    DeploymentStatus,
+    get_deployment_service,
+)
 
 
 class StubApiClient:
@@ -40,9 +45,10 @@ def _fake_model_version(version, run_id="run-1"):
 
 
 class StubMlflowClient:
-    def __init__(self, models=None, versions_by_name=None):
+    def __init__(self, models=None, versions_by_name=None, git_commits_by_run=None):
         self._models = models or []
         self._versions_by_name = versions_by_name or {}
+        self._git_commits_by_run = git_commits_by_run or {}
 
     def get_registered_models(self):
         return self._models
@@ -56,6 +62,9 @@ class StubMlflowClient:
 
     def get_run_metrics(self, run_id):
         return {}
+
+    def get_git_commit(self, run_id):
+        return self._git_commits_by_run.get(run_id)
 
 
 class UnreachableMlflowClient:
@@ -71,7 +80,7 @@ class StubDeploymentService:
     get_latest_published_image.
     """
 
-    def __init__(self, **status_overrides):
+    def __init__(self, current_deployment=None, history=None, **status_overrides):
         defaults = dict(
             registry="ghcr.io",
             repository="1ve19cs088/mlops-kubeflow-pipeline",
@@ -86,9 +95,17 @@ class StubDeploymentService:
         )
         defaults.update(status_overrides)
         self._status = DeploymentStatus(**defaults)
+        self._current_deployment = current_deployment or CurrentDeployment(image=None, tag=None)
+        self._history = history or []
 
     def get_status(self):
         return self._status
+
+    def get_current_deployment(self):
+        return self._current_deployment
+
+    def get_deployment_history(self):
+        return self._history
 
 
 def test_status_page_shows_healthy_when_api_and_model_available():
@@ -198,3 +215,61 @@ def test_status_page_shows_mlflow_unreachable_gracefully():
     assert response.status_code == 200
     assert "MLflow registry unreachable" in response.text
     assert "database is locked" in response.text
+
+
+def test_status_page_shows_live_deployment_section_with_resolved_mlflow_version():
+    stub_mlflow = StubMlflowClient(
+        models=[SimpleNamespace(name="iris-model", last_updated_timestamp=100)],
+        versions_by_name={"iris-model": [_fake_model_version(version=5, run_id="run-5")]},
+        git_commits_by_run={"run-5": "abc123commit"},
+    )
+    history = [
+        DeploymentHistoryEntry(
+            timestamp="2026-01-01T00:00:00+00:00",
+            image="ghcr.io/1ve19cs088/mlops-kubeflow-pipeline-serving:abc123commit",
+            tag="abc123commit",
+            success=True,
+            rolled_back=False,
+            duration_seconds=12.5,
+        )
+    ]
+    deployment_stub = StubDeploymentService(
+        current_deployment=CurrentDeployment(
+            image="ghcr.io/1ve19cs088/mlops-kubeflow-pipeline-serving:abc123commit",
+            tag="abc123commit",
+        ),
+        history=history,
+    )
+    app.dependency_overrides[get_api_client] = lambda: StubApiClient()
+    app.dependency_overrides[get_mlflow_client] = lambda: stub_mlflow
+    app.dependency_overrides[get_deployment_service] = lambda: deployment_stub
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/status")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "Live Deployment" in response.text
+    assert "ghcr.io/1ve19cs088/mlops-kubeflow-pipeline-serving:abc123commit" in response.text
+    assert "abc123commit" in response.text
+    assert "iris-model v5" in response.text
+    assert "2026-01-01T00:00:00+00:00" in response.text
+    assert "12.50s" in response.text
+
+
+def test_status_page_shows_no_deployments_this_session_when_history_is_empty():
+    app.dependency_overrides[get_api_client] = lambda: StubApiClient()
+    app.dependency_overrides[get_mlflow_client] = lambda: StubMlflowClient(models=[])
+    app.dependency_overrides[get_deployment_service] = lambda: StubDeploymentService()
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/status")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "No deployments have been made this session" in response.text
+    assert "No deployments this session" in response.text

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Confirm {{ action|capitalize }} — {{ model_name }} v{{ version }} — MLOps Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="mb-0">Confirm {{ action|capitalize }}</h1>
+  <a href="/models/{{ model_name }}" class="btn btn-outline-secondary btn-sm">Cancel</a>
+</div>
+
+<dl class="row">
+  <dt class="col-sm-3">Model Name</dt>
+  <dd class="col-sm-9">{{ model_name }}</dd>
+  <dt class="col-sm-3">Version</dt>
+  <dd class="col-sm-9">{{ version }}</dd>
+  <dt class="col-sm-3">Current Stage</dt>
+  <dd class="col-sm-9">{{ current_stage or "None" }}</dd>
+</dl>
+
+{% if action == "promote" %}
+<p>
+  This transitions version {{ version }} to <strong>Production</strong>. MLflow will
+  automatically archive whichever version is currently in Production.
+</p>
+{% else %}
+<p>
+  This transitions version {{ version }} to <strong>Archived</strong>. It will no longer be
+  eligible for Production without being un-archived first.
+</p>
+{% endif %}
+
+<form method="post" action="/models/{{ model_name }}/versions/{{ version }}/actions/{{ action }}" class="d-flex gap-2">
+  <a href="/models/{{ model_name }}" class="btn btn-outline-secondary">Cancel</a>
+  <button type="submit" class="btn btn-primary">Confirm {{ action|capitalize }}</button>
+</form>
+{% endblock %}

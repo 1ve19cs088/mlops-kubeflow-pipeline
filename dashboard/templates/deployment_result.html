@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ action|capitalize }} Result — {{ model_name }} v{{ version }} — MLOps Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="mb-0">{{ action|capitalize }} Result</h1>
+  <a href="/models/{{ model_name }}" class="btn btn-outline-secondary btn-sm">Back to {{ model_name }}</a>
+</div>
+
+{% if result.success %}
+<div class="alert alert-success">
+  <strong>{{ action|capitalize }} succeeded.</strong> {{ result.message }}
+</div>
+{% else %}
+<div class="alert alert-danger">
+  <strong>{{ action|capitalize }} failed.</strong> {{ result.original_error or result.message }}
+</div>
+{% endif %}
+
+<dl class="row">
+  <dt class="col-sm-3">Image</dt>
+  <dd class="col-sm-9"><code>{{ result.image }}</code></dd>
+  <dt class="col-sm-3">Namespace</dt>
+  <dd class="col-sm-9">{{ result.namespace }}</dd>
+  <dt class="col-sm-3">Deployment</dt>
+  <dd class="col-sm-9">{{ result.deployment_name }}</dd>
+  <dt class="col-sm-3">Duration</dt>
+  <dd class="col-sm-9">{{ "%.2fs"|format(result.duration_seconds) }}</dd>
+</dl>
+
+{% if result.rollback_success is not none %}
+<h2 class="h5 mt-4">Automatic Rollback</h2>
+<div class="alert {{ 'alert-success' if result.rollback_success else 'alert-danger' }}">
+  <strong>Automatic rollback {{ "succeeded" if result.rollback_success else "failed" }}.</strong>
+  {{ result.rollback_message }}
+</div>
+<dl class="row">
+  <dt class="col-sm-3">Original Deployment Error</dt>
+  <dd class="col-sm-9">{{ result.original_error }}</dd>
+  <dt class="col-sm-3">Rollback Duration</dt>
+  <dd class="col-sm-9">{{ "%.2fs"|format(result.rollback_duration_seconds) }}</dd>
+</dl>
+{% endif %}
+
+<h2 class="h5 mt-4">Final Cluster State</h2>
+<p class="mb-0">
+  {% if result.success %}
+    The Deployment is now running <code>{{ result.image }}</code>.
+  {% elif result.rollback_success %}
+    The failed deploy was automatically rolled back — the Deployment is running its previous
+    image again.
+  {% elif result.rollback_success is sameas false %}
+    The deploy failed <strong>and</strong> the automatic rollback did not complete successfully.
+    The cluster may be in a partially-updated or unhealthy state — manual investigation is
+    recommended (<code>kubectl get pods -n {{ result.namespace }}</code>).
+  {% else %}
+    The deploy failed before any cluster state was changed — no rollback was needed.
+  {% endif %}
+</p>
+{% endblock %}

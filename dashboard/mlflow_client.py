@@ -32,6 +32,7 @@ MLFLOW_TRACKING_URI = os.environ.get(
 )
 
 PRODUCTION_STAGE = "Production"
+ARCHIVED_STAGE = "Archived"
 
 
 class MlflowRegistryClient:
@@ -86,6 +87,36 @@ class MlflowRegistryClient:
             if version.current_stage == PRODUCTION_STAGE:
                 return version
         return None
+
+    def promote_version(self, name: str, version: str) -> ModelVersion:
+        """
+        Transitions `version` to Production, using MLflow's own
+        archive_existing_versions=True so whichever version was
+        previously in Production is archived automatically — one
+        native MLflow call, not custom stage-tracking logic here.
+
+        transition_model_version_stage is deprecated since MLflow 2.9
+        in favor of aliases, but remains fully functional, and is the
+        only stage-transition mechanism this project's existing design
+        already relies on (current_stage, PRODUCTION_STAGE) — using it
+        keeps this consistent with the rest of the codebase rather
+        than introducing a second, incompatible model (aliases)
+        alongside it.
+        """
+
+        return self._client.transition_model_version_stage(
+            name=name,
+            version=version,
+            stage=PRODUCTION_STAGE,
+            archive_existing_versions=True,
+        )
+
+    def archive_version(self, name: str, version: str) -> ModelVersion:
+        """Transitions `version` to Archived."""
+
+        return self._client.transition_model_version_stage(
+            name=name, version=version, stage=ARCHIVED_STAGE
+        )
 
     def get_run_metrics(self, run_id: str) -> dict:
         """All metrics logged against `run_id`."""

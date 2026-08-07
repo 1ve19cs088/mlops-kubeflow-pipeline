@@ -219,6 +219,39 @@ def test_get_artifact_bytes_reads_the_downloaded_file(tmp_path):
     )
 
 
+def test_promote_version_transitions_to_production_and_archives_others():
+    mock_client = MagicMock()
+    mock_client.transition_model_version_stage.return_value = _fake_model_version(
+        "iris-model", version=3, current_stage="Production"
+    )
+    client = _client_with_mock(mock_client)
+
+    result = client.promote_version("iris-model", "3")
+
+    assert result.current_stage == "Production"
+    mock_client.transition_model_version_stage.assert_called_once_with(
+        name="iris-model",
+        version="3",
+        stage="Production",
+        archive_existing_versions=True,
+    )
+
+
+def test_archive_version_transitions_to_archived():
+    mock_client = MagicMock()
+    mock_client.transition_model_version_stage.return_value = _fake_model_version(
+        "iris-model", version=1, current_stage="Archived"
+    )
+    client = _client_with_mock(mock_client)
+
+    result = client.archive_version("iris-model", "1")
+
+    assert result.current_stage == "Archived"
+    mock_client.transition_model_version_stage.assert_called_once_with(
+        name="iris-model", version="1", stage="Archived"
+    )
+
+
 def test_get_mlflow_client_returns_registry_client_instance():
     client = get_mlflow_client()
 

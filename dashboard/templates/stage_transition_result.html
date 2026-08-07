@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ action|capitalize }} Result — {{ model_name }} v{{ version }} — MLOps Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="mb-0">{{ action|capitalize }} Result</h1>
+  <a href="/models/{{ model_name }}" class="btn btn-outline-secondary btn-sm">Back to {{ model_name }}</a>
+</div>
+
+{% if success %}
+<div class="alert alert-success">
+  <strong>
+    {{ model_name }} version {{ version }} was successfully
+    {{ "promoted to Production" if action == "promote" else "archived" }}.
+  </strong>
+</div>
+{% else %}
+<div class="alert alert-danger">
+  <strong>{{ action|capitalize }} failed.</strong> {{ error }}
+</div>
+{% endif %}
+{% endblock %}
