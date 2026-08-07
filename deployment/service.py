@@ -20,7 +20,7 @@ from typing import Optional
 from deployment.config import DeploymentConfig, load_deployment_config
 from deployment.kubectl_client import apply_manifest, rollout_undo, wait_for_rollout
 from deployment.manifests import build_manifest_bundle
-from deployment.registry_client import get_latest_published_image
+from deployment.registry_client import get_latest_published_image, get_published_image
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,13 @@ class DeploymentStatus:
     latest_published_image: Optional[str]
     image_digest: Optional[str]
     current_tag: Optional[str]
+
+
+@dataclass(frozen=True)
+class DeployabilityCheck:
+    deployable: bool
+    image: Optional[str]
+    reason: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -97,6 +104,59 @@ class DeploymentService:
             latest_published_image=latest_published_image,
             image_digest=published_image.digest if published_image else None,
             current_tag=published_image.tag if published_image else None,
+        )
+
+    def resolve_deployment_for_commit(self, git_commit_sha: Optional[str]) -> DeployabilityCheck:
+        """
+        Given a git commit SHA (or None), determines whether there's
+        a real, published image for it — never a guess, never a
+        silent fall-back to "latest".
+
+        This method never imports or knows about MLflow: the caller
+        (a future dashboard route) is responsible for resolving a
+        model version to its git commit tag first, via
+        MlflowRegistryClient.get_git_commit(), and passing the result
+        in here. That keeps MLflow interaction isolated to
+        dashboard/mlflow_client.py exactly as this project's
+        architecture already requires.
+
+        Returns DeployabilityCheck(deployable=False, image=None,
+        reason=...) — with a human-readable, honest reason — for both
+        ways this can fail to resolve: no commit was ever recorded for
+        this version (older models, trained before commit tracking
+        existed), or a commit was recorded but CI hasn't published an
+        image for it (yet, or never will if that commit didn't reach
+        a branch this project's CI publishes from).
+        """
+
+        if not git_commit_sha:
+            return DeployabilityCheck(
+                deployable=False,
+                image=None,
+                reason=(
+                    "This model version has no recorded git commit — it was "
+                    "likely trained before commit tracking was added, or "
+                    "outside a git checkout. No deployable image available."
+                ),
+            )
+
+        published_image = get_published_image(self._config, git_commit_sha)
+        if published_image is None:
+            return DeployabilityCheck(
+                deployable=False,
+                image=None,
+                reason=(
+                    f"No published image was found for commit {git_commit_sha}. "
+                    "It may not have been built and pushed yet, or was never "
+                    "published from a branch this project's CI publishes "
+                    "images from. No deployable image available."
+                ),
+            )
+
+        return DeployabilityCheck(
+            deployable=True,
+            image=self._build_image_reference(published_image.tag),
+            reason=None,
         )
 
     def deploy(self, image_tag: str, timeout_seconds: int = 120) -> DeploymentResult:

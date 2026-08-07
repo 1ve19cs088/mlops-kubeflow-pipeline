@@ -100,6 +100,50 @@ def test_get_deployment_service_returns_a_deployment_service_instance():
     assert isinstance(get_deployment_service(), DeploymentService)
 
 
+def test_resolve_deployment_for_commit_is_not_deployable_when_commit_is_none():
+    service = DeploymentService(config=_config())
+
+    result = service.resolve_deployment_for_commit(None)
+
+    assert result.deployable is False
+    assert result.image is None
+    assert "no recorded git commit" in result.reason
+
+
+def test_resolve_deployment_for_commit_is_not_deployable_when_no_image_published_for_it():
+    with patch("deployment.service.get_published_image", return_value=None) as mock_query:
+        service = DeploymentService(config=_config())
+        result = service.resolve_deployment_for_commit("abc123commit")
+
+    assert result.deployable is False
+    assert result.image is None
+    assert "No published image was found for commit abc123commit" in result.reason
+    mock_query.assert_called_once_with(service._config, "abc123commit")
+
+
+def test_resolve_deployment_for_commit_is_deployable_when_image_exists():
+    published = PublishedImage(tag="abc123commit", digest="sha256:def456")
+
+    with patch("deployment.service.get_published_image", return_value=published):
+        service = DeploymentService(config=_config())
+        result = service.resolve_deployment_for_commit("abc123commit")
+
+    assert result.deployable is True
+    assert result.reason is None
+    assert result.image == "ghcr.io/1ve19cs088/mlops-kubeflow-pipeline-serving:abc123commit"
+
+
+def test_resolve_deployment_for_commit_never_falls_back_to_latest():
+    # Even if "latest" happens to be published, resolving a specific
+    # (unpublished) commit must never silently substitute it.
+    with patch("deployment.service.get_published_image", return_value=None) as mock_query:
+        service = DeploymentService(config=_config())
+        result = service.resolve_deployment_for_commit("some-other-commit")
+
+    assert result.deployable is False
+    mock_query.assert_called_once_with(service._config, "some-other-commit")
+
+
 def _mock_bundle():
     return ("<manifest yaml>", "model-serving", "mlops-kubeflow-pipeline")
 

@@ -149,6 +149,43 @@ def test_get_run_parameters_returns_dict_of_params():
     assert params == {"algorithm": "RandomForestClassifier"}
 
 
+def test_get_run_tags_returns_dict_of_tags():
+    mock_client = MagicMock()
+    mock_client.get_run.return_value = SimpleNamespace(
+        data=SimpleNamespace(
+            metrics={}, params={}, tags={"mlflow.source.git.commit": "abc123"}
+        )
+    )
+    client = _client_with_mock(mock_client)
+
+    tags = client.get_run_tags("run-123")
+
+    assert tags == {"mlflow.source.git.commit": "abc123"}
+    mock_client.get_run.assert_called_once_with("run-123")
+
+
+def test_get_git_commit_returns_the_tag_value_when_present():
+    mock_client = MagicMock()
+    mock_client.get_run.return_value = SimpleNamespace(
+        data=SimpleNamespace(
+            metrics={}, params={}, tags={"mlflow.source.git.commit": "abc123"}
+        )
+    )
+    client = _client_with_mock(mock_client)
+
+    assert client.get_git_commit("run-123") == "abc123"
+
+
+def test_get_git_commit_returns_none_when_the_tag_is_absent():
+    mock_client = MagicMock()
+    mock_client.get_run.return_value = SimpleNamespace(
+        data=SimpleNamespace(metrics={}, params={}, tags={})
+    )
+    client = _client_with_mock(mock_client)
+
+    assert client.get_git_commit("run-123") is None
+
+
 def test_list_run_artifacts_returns_top_level_file_infos():
     mock_client = MagicMock()
     mock_client.list_artifacts.return_value = [

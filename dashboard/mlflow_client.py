@@ -23,6 +23,7 @@ import mlflow.artifacts
 from mlflow import MlflowClient
 from mlflow.entities import FileInfo
 from mlflow.entities.model_registry import ModelVersion, RegisteredModel
+from mlflow.utils.mlflow_tags import MLFLOW_GIT_COMMIT
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -95,6 +96,27 @@ class MlflowRegistryClient:
         """All parameters logged against `run_id`."""
 
         return dict(self._client.get_run(run_id).data.params)
+
+    def get_run_tags(self, run_id: str) -> dict:
+        """
+        All tags logged against `run_id` — includes MLflow's own
+        standard tags (e.g. mlflow.source.git.commit) alongside
+        anything else set explicitly.
+        """
+
+        return dict(self._client.get_run(run_id).data.tags)
+
+    def get_git_commit(self, run_id: str) -> Optional[str]:
+        """
+        The git commit `run_id` was trained under, if
+        src/tracking/mlflow_tracking.py's log_run() was able to
+        determine one at training time. None for runs logged before
+        commit tracking existed, or any run where neither GITHUB_SHA
+        nor a local git checkout was available when it trained —
+        never guessed or inferred from anything else.
+        """
+
+        return self.get_run_tags(run_id).get(MLFLOW_GIT_COMMIT)
 
     def list_run_artifacts(self, run_id: str) -> list[FileInfo]:
         """Top-level artifact files/directories logged against `run_id`."""

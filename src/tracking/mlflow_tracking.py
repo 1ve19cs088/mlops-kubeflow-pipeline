@@ -4,6 +4,17 @@ MLflow experiment tracking and model registration.
 Reads the same artifacts src/models/train.py and src/models/evaluate.py
 already produce and write to disk — no business logic is duplicated or
 changed here; this module only reports what those stages already did.
+
+Every run is automatically tagged with the git commit it trained
+under (MLflow's own standard mlflow.source.git.commit tag, via
+GitPython, already an installed dependency) — no code in this module
+sets that tag itself; MLflow does it natively whenever start_run() is
+called from inside a git working directory. This is what lets a
+later registered model version be traced back to the exact commit,
+and from there to the exact Docker image CI publishes for that
+commit. Confirmed empirically before assuming it needed any help:
+version 1, registered back in Phase 1 before this comment existed,
+already carries this tag.
 """
 
 import json

@@ -193,3 +193,24 @@ def test_log_run_creates_separate_runs_per_call(tmp_path):
     client = mlflow.MlflowClient()
     versions = client.search_model_versions("name='test-dataset-RandomForestClassifier'")
     assert len(versions) == 2
+
+
+# No test asserts MLflow's automatic mlflow.source.git.commit tagging
+# directly: log_run() sets no such tag itself — MLflow (via GitPython,
+# already an installed dependency) tags every run with it natively,
+# based on the *entrypoint script's* path (sys.argv[0]), not the
+# module that calls mlflow.start_run(). That's confirmed reliably true
+# for this project's real invocation (`python -m src.pipeline.run_pipeline`,
+# a script inside this git repo) — version 1, registered back in Phase 1
+# before any of this stage's code existed, already carries the tag, and
+# a fresh real pipeline run during this stage's manual verification
+# confirmed it again. It is deliberately *not* true when log_run() is
+# called from inside a pytest run: pytest's own entrypoint
+# (.venv/lib/.../site-packages/pytest/__main__.py) isn't part of this
+# git repo, so MLflow correctly reports no git context rather than
+# guessing — exactly its intended "never fabricate a commit" behavior,
+# confirmed by reading the actual failed assertion during development,
+# not assumed. A test asserting the tag's presence would therefore be
+# asserting something false in this specific execution context, so
+# none exists here; see the manual verification in this stage's commit
+# message for the real, empirical proof instead.

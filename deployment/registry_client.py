@@ -46,7 +46,15 @@ class PublishedImage:
     digest: Optional[str]
 
 
-def get_latest_published_image(config: DeploymentConfig) -> Optional[PublishedImage]:
+def get_published_image(config: DeploymentConfig, tag: str) -> Optional[PublishedImage]:
+    """
+    Looks up whatever is actually published under `tag` — "latest",
+    or a specific git commit SHA once CI has published one. Returns
+    None the same way for every "nothing to report" case: unsupported
+    provider, incomplete config, no such tag published, or any
+    network/registry error.
+    """
+
     if config.provider != "ghcr":
         return None
     if not (config.registry and config.repository and config.image_name):
@@ -60,14 +68,20 @@ def get_latest_published_image(config: DeploymentConfig) -> Optional[PublishedIm
 
     try:
         token = _get_anonymous_pull_token(config.registry, repository_path)
-        digest = _get_manifest_digest(config.registry, repository_path, "latest", token)
+        digest = _get_manifest_digest(config.registry, repository_path, tag, token)
     except Exception:
         return None
 
     if digest is None:
         return None
 
-    return PublishedImage(tag="latest", digest=digest)
+    return PublishedImage(tag=tag, digest=digest)
+
+
+def get_latest_published_image(config: DeploymentConfig) -> Optional[PublishedImage]:
+    """The image currently published under the "latest" tag, if any."""
+
+    return get_published_image(config, "latest")
 
 
 def _get_anonymous_pull_token(registry: str, repository_path: str) -> str:

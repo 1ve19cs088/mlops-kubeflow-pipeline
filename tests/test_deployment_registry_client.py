@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 
 from deployment.config import DeploymentConfig
-from deployment.registry_client import get_latest_published_image
+from deployment.registry_client import get_latest_published_image, get_published_image
 
 
 def _config(**overrides):
@@ -90,3 +90,40 @@ def test_no_call_made_when_provider_is_not_ghcr():
         get_latest_published_image(_config(provider="dockerhub"))
 
     mock_get.assert_not_called()
+
+
+def test_get_published_image_resolves_a_specific_commit_tag():
+    token_response = _mock_response(json_data={"token": "anon-token"})
+    manifest_response = _mock_response(headers={"Docker-Content-Digest": "sha256:def456"})
+
+    with patch("httpx.get", side_effect=[token_response, manifest_response]) as mock_get:
+        result = get_published_image(_config(), "abc123commit")
+
+    assert result is not None
+    assert result.tag == "abc123commit"
+    assert result.digest == "sha256:def456"
+    # The manifest request must target the given tag, not "latest".
+    manifest_call = mock_get.call_args_list[1]
+    assert manifest_call.args[0].endswith("/manifests/abc123commit")
+
+
+def test_get_published_image_returns_none_when_that_commit_was_never_published():
+    token_response = _mock_response(json_data={"token": "anon-token"})
+    not_found_response = _mock_response(status_code=404)
+
+    with patch("httpx.get", side_effect=[token_response, not_found_response]):
+        result = get_published_image(_config(), "never-published-commit")
+
+    assert result is None
+
+
+def test_get_latest_published_image_is_a_thin_wrapper_over_get_published_image():
+    token_response = _mock_response(json_data={"token": "anon-token"})
+    manifest_response = _mock_response(headers={"Docker-Content-Digest": "sha256:abc123"})
+
+    with patch("httpx.get", side_effect=[token_response, manifest_response]) as mock_get:
+        result = get_latest_published_image(_config())
+
+    assert result.tag == "latest"
+    manifest_call = mock_get.call_args_list[1]
+    assert manifest_call.args[0].endswith("/manifests/latest")
