@@ -115,6 +115,13 @@ def log_run(
             sk_model=model,
             name=MODEL_ARTIFACT_NAME,
             registered_model_name=registered_model_name,
+            # MLflow's default serialization format is "skops", which
+            # would need another dependency this project doesn't
+            # otherwise use. "pickle" matches how train.py already
+            # persists this exact model (joblib, which is pickle-based)
+            # — no new serialization format introduced, no new
+            # dependency needed.
+            serialization_format="pickle",
         )
 
         run_id = run.info.run_id

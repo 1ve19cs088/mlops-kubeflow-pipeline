@@ -9,9 +9,16 @@
 # existing pins (pandas==3.0.5 was deliberately chosen — see the
 # feature_engineering dtype fix earlier in this project's history).
 # mlflow-skinny provides the same tracking client, model registry, and
-# mlflow.sklearn.log_model API with no such constraint, verified
-# working end-to-end (run logging + model registration) against the
-# pinned scikit-learn/pandas already in base.txt.
+# mlflow.sklearn.log_model API with no such constraint.
+#
+# sqlalchemy + alembic are required explicitly: mlflow-skinny alone
+# does NOT bundle them, but MLflow's SQL-backed model registry store
+# needs them to support a sqlite:// tracking URI at all — without them,
+# mlflow raises UnsupportedModelRegistryStoreURIException. This was
+# missed in initial local verification because a stray earlier
+# `pip install mlflow` (full package, later uninstalled) had left both
+# packages behind in that dev venv, masking the real requirement; a
+# genuinely clean install (matching CI) surfaced it.
 -r base.txt
 
 matplotlib==3.11.1
@@ -19,3 +26,5 @@ PyYAML==6.0.3
 kfp==2.17.0
 docker==7.2.0
 mlflow-skinny==3.15.1
+sqlalchemy==2.0.51
+alembic==1.19.0
