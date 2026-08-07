@@ -14,6 +14,8 @@ from fastapi.testclient import TestClient
 from dashboard.api_client import ApiUnavailableError, get_api_client
 from dashboard.main import app
 from dashboard.mlflow_client import get_mlflow_client
+from deployment.config import DeploymentConfig
+from deployment.service import DeploymentService, get_deployment_service
 
 
 class StubApiClient:
@@ -62,6 +64,20 @@ class UnreachableMlflowClient:
         raise Exception("database is locked")
 
 
+def _stub_deployment_service(**config_overrides):
+    defaults = dict(
+        provider="ghcr",
+        registry="ghcr.io",
+        repository="1ve19cs088/mlops-kubeflow-pipeline",
+        image_name="mlops-kubeflow-pipeline-serving",
+        latest_image_tag="not-yet-pushed",
+        deployment_target="kind-ai-agent",
+        current_deployed_version="Not Deployed",
+    )
+    defaults.update(config_overrides)
+    return DeploymentService(config=DeploymentConfig(**defaults))
+
+
 def test_status_page_shows_healthy_when_api_and_model_available():
     stub_mlflow = StubMlflowClient(
         models=[SimpleNamespace(name="iris-model", last_updated_timestamp=100)],
@@ -69,6 +85,7 @@ def test_status_page_shows_healthy_when_api_and_model_available():
     )
     app.dependency_overrides[get_api_client] = lambda: StubApiClient()
     app.dependency_overrides[get_mlflow_client] = lambda: stub_mlflow
+    app.dependency_overrides[get_deployment_service] = lambda: _stub_deployment_service()
 
     try:
         with TestClient(app) as client:
@@ -86,6 +103,32 @@ def test_status_page_shows_healthy_when_api_and_model_available():
     assert "Deployment Pipeline" in response.text
     assert "Docker Build" in response.text
     assert "Future Stage" in response.text
+    # Phase 3 Stage 1: Deployment Registry section
+    assert "Deployment Registry" in response.text
+    assert "ghcr.io" in response.text
+    assert "1ve19cs088/mlops-kubeflow-pipeline" in response.text
+    assert "not-yet-pushed" in response.text
+    assert "kind-ai-agent" in response.text
+    assert "Not Deployed" in response.text
+    assert "Configured" in response.text
+
+
+def test_status_page_handles_unconfigured_deployment_registry_gracefully():
+    app.dependency_overrides[get_api_client] = lambda: StubApiClient()
+    app.dependency_overrides[get_mlflow_client] = lambda: StubMlflowClient(models=[])
+    app.dependency_overrides[get_deployment_service] = lambda: _stub_deployment_service(
+        registry="", repository="", image_name=""
+    )
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/status")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "Deployment Registry" in response.text
+    assert response.text.count("Not Configured") >= 3
 
 
 def test_status_page_degrades_gracefully_when_api_unavailable():

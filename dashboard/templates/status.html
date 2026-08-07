@@ -86,4 +86,32 @@
     {{ pipeline_badge(deployment_pipeline.current_deployment) }}
   </div></div></div>
 </div>
+
+<h5 class="mt-4">Deployment Registry</h5>
+<div class="row g-3">
+  <div class="col-md-2"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Registry</h6>
+    <p class="mb-0">{{ deployment_status.registry or "Not Configured" }}</p>
+  </div></div></div>
+  <div class="col-md-2"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Repository</h6>
+    <p class="mb-0">{{ deployment_status.repository or "Not Configured" }}</p>
+  </div></div></div>
+  <div class="col-md-2"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Latest Image Tag</h6>
+    <p class="mb-0">{{ deployment_status.latest_image_tag or "Not Configured" }}</p>
+  </div></div></div>
+  <div class="col-md-2"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Deployment Target</h6>
+    <p class="mb-0">{{ deployment_status.deployment_target or "Not Configured" }}</p>
+  </div></div></div>
+  <div class="col-md-2"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Current Deployed Version</h6>
+    <p class="mb-0">{{ deployment_status.current_deployed_version or "Not Configured" }}</p>
+  </div></div></div>
+  <div class="col-md-2"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Current Status</h6>
+    <span class="badge {{ 'bg-success' if deployment_status.status == 'Configured' else 'bg-secondary' }}">{{ deployment_status.status }}</span>
+  </div></div></div>
+</div>
 {% endblock %}

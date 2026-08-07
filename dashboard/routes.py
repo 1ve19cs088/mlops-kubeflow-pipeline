@@ -35,6 +35,7 @@ from dashboard.deployment_pipeline_status import get_deployment_pipeline_status
 from dashboard.dtype_utils import coerce_value, html_input_type
 from dashboard.mlflow_client import MlflowRegistryClient, get_mlflow_client
 from dashboard.status_info import get_environment_status, get_github_actions_badge_url
+from deployment.service import DeploymentService, get_deployment_service
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -367,6 +368,7 @@ def status_page(
     request: Request,
     api_client: ApiClient = Depends(get_api_client),
     mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+    deployment_service: DeploymentService = Depends(get_deployment_service),
 ):
     api_ok = False
     model_ok = False
@@ -415,6 +417,7 @@ def status_page(
             "mlflow_error": mlflow_error,
             "registry": registry,
             "deployment_pipeline": get_deployment_pipeline_status(),
+            "deployment_status": deployment_service.get_status(),
         },
     )
 
