@@ -1,6 +1,15 @@
 # Everything the dashboard UI needs at runtime. It only ever talks to
 # the existing serving API over HTTP (via ApiClient) — it never
 # imports app/ or src/, so it can't duplicate or drift from their logic.
+#
+# mlflow-skinny + sqlalchemy + alembic: the dashboard now reads the
+# same MLflow registry the pipeline writes to (via mlflow_client.py).
+# sqlalchemy/alembic are required even for reads against a sqlite://
+# tracking URI — confirmed the same way the identical gap in
+# requirements/pipeline.txt was found and fixed (a genuinely fresh
+# install, not the contaminated dev venv). skops is NOT needed here:
+# the dashboard only reads registry/run metadata, it never calls
+# mlflow.sklearn.log_model() or loads the actual model object.
 -r base.txt
 
 fastapi==0.141.1
@@ -9,3 +18,6 @@ httpx==0.28.1
 jinja2==3.1.6
 python-multipart==0.0.32
 PyYAML==6.0.3
+mlflow-skinny==3.15.1
+sqlalchemy==2.0.51
+alembic==1.19.0
