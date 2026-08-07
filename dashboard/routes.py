@@ -8,6 +8,7 @@ logic lives here, only presentation.
 
 import io
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -23,6 +24,7 @@ from dashboard.api_client import (
 )
 from dashboard.deployment_info import get_deployment_info
 from dashboard.dtype_utils import coerce_value, html_input_type
+from dashboard.mlflow_client import MlflowRegistryClient, get_mlflow_client
 from dashboard.status_info import get_environment_status, get_github_actions_badge_url
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -310,4 +312,45 @@ def status_page(request: Request, api_client: ApiClient = Depends(get_api_client
             "kubernetes": environment["kubernetes"],
             "github_badge_url": get_github_actions_badge_url(),
         },
+    )
+
+
+def _format_timestamp(epoch_millis: int) -> str:
+    return datetime.fromtimestamp(epoch_millis / 1000, tz=timezone.utc).isoformat()
+
+
+def _build_model_row(mlflow_client: MlflowRegistryClient, model) -> dict:
+    versions = mlflow_client.get_model_versions(model.name)
+    latest = versions[0] if versions else None
+
+    latest_accuracy = None
+    if latest is not None:
+        metrics = mlflow_client.get_run_metrics(latest.run_id)
+        latest_accuracy = metrics.get("test_accuracy")
+
+    return {
+        "name": model.name,
+        "latest_version": latest.version if latest is not None else None,
+        "current_stage": latest.current_stage if latest is not None else None,
+        "latest_accuracy": latest_accuracy,
+        "created_time": _format_timestamp(model.creation_timestamp),
+        "num_versions": len(versions),
+    }
+
+
+@router.get("/models")
+def models_list(
+    request: Request,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+):
+    models = mlflow_client.get_registered_models()
+    rows = [_build_model_row(mlflow_client, model) for model in models]
+
+    return templates.TemplateResponse(request, "models.html", {"models": rows})
+
+
+@router.get("/models/{model_name}")
+def model_detail(request: Request, model_name: str):
+    return templates.TemplateResponse(
+        request, "model_detail.html", {"model_name": model_name}
     )

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Model Registry — MLOps Dashboard{% endblock %}
+{% block content %}
+<h1 class="mb-4">Model Registry</h1>
+
+{% if models %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead>
+      <tr>
+        <th>Model Name</th>
+        <th>Latest Version</th>
+        <th>Current Stage</th>
+        <th>Latest Accuracy</th>
+        <th>Created</th>
+        <th># Versions</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for model in models %}
+      <tr>
+        <td class="fw-semibold">{{ model.name }}</td>
+        <td>{{ model.latest_version if model.latest_version is not none else "—" }}</td>
+        <td>
+          <span class="badge {{ 'bg-success' if model.current_stage == 'Production' else 'bg-secondary' }}">
+            {{ model.current_stage or "None" }}
+          </span>
+        </td>
+        <td>{{ "%.4f"|format(model.latest_accuracy) if model.latest_accuracy is not none else "N/A" }}</td>
+        <td>{{ model.created_time }}</td>
+        <td>{{ model.num_versions }}</td>
+        <td><a href="/models/{{ model.name }}" class="btn btn-sm btn-primary">View</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-muted">No models registered yet. Run the training pipeline to register one.</p>
+{% endif %}
+{% endblock %}
