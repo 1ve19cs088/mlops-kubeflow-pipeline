@@ -29,7 +29,9 @@ from dashboard.api_client import (
     ApiValidationError,
     get_api_client,
 )
+from dashboard.deployment_actions import get_action
 from dashboard.deployment_info import get_deployment_info
+from dashboard.deployment_pipeline_status import get_deployment_pipeline_status
 from dashboard.dtype_utils import coerce_value, html_input_type
 from dashboard.mlflow_client import MlflowRegistryClient, get_mlflow_client
 from dashboard.status_info import get_environment_status, get_github_actions_badge_url
@@ -412,6 +414,7 @@ def status_page(
             "mlflow_ok": mlflow_ok,
             "mlflow_error": mlflow_error,
             "registry": registry,
+            "deployment_pipeline": get_deployment_pipeline_status(),
         },
     )
 
@@ -593,4 +596,33 @@ def download_artifact(
         content=content,
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/models/{model_name}/versions/{version}/actions/{action_key}")
+def version_action_placeholder(
+    request: Request,
+    model_name: str,
+    version: str,
+    action_key: str,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+):
+    action = get_action(action_key)
+    if action is None:
+        raise HTTPException(status_code=404, detail="Unknown action")
+
+    versions = mlflow_client.get_model_versions(model_name)
+    matched = next((v for v in versions if str(v.version) == version), None)
+    if matched is None:
+        raise HTTPException(status_code=404, detail="Model version not found")
+
+    return templates.TemplateResponse(
+        request,
+        "action_placeholder.html",
+        {
+            "model_name": model_name,
+            "version": version,
+            "action": action,
+        },
+        status_code=501,
     )

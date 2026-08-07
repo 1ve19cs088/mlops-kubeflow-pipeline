@@ -43,7 +43,20 @@
         <td>{{ v.dataset or "N/A" }}</td>
         <td>{{ v.created_time }}</td>
         <td><code>{{ v.run_id[:8] if v.run_id else "N/A" }}</code></td>
-        <td><a href="/models/{{ model_name }}/versions/{{ v.version }}" class="btn btn-sm btn-primary">View Details</a></td>
+        <td>
+          <div class="btn-group">
+            <a href="/models/{{ model_name }}/versions/{{ v.version }}" class="btn btn-sm btn-primary">View Details</a>
+            <button type="button" class="btn btn-sm btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+              <span class="visually-hidden">Toggle actions</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="/models/{{ model_name }}/versions/{{ v.version }}/actions/promote">Promote to Production</a></li>
+              <li><a class="dropdown-item" href="/models/{{ model_name }}/versions/{{ v.version }}/actions/archive">Archive Version</a></li>
+              <li><a class="dropdown-item" href="/models/{{ model_name }}/versions/{{ v.version }}/actions/rollback">Rollback to this Version</a></li>
+              <li><a class="dropdown-item" href="/models/{{ model_name }}/versions/{{ v.version }}/actions/deploy">Deploy</a></li>
+            </ul>
+          </div>
+        </td>
       </tr>
       {% endfor %}
     </tbody>

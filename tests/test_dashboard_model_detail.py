@@ -84,6 +84,11 @@ def test_model_detail_lists_every_version_newest_first_with_full_columns():
     assert "/models/iris-model/versions/1" in text
     # version 1 has no metrics/params stubbed -> handled gracefully
     assert "N/A" in text
+    # Stage 6: every version row has action placeholder links
+    assert "/models/iris-model/versions/2/actions/promote" in text
+    assert "/models/iris-model/versions/2/actions/archive" in text
+    assert "/models/iris-model/versions/2/actions/rollback" in text
+    assert "/models/iris-model/versions/2/actions/deploy" in text
 
 
 def test_model_detail_shows_empty_state_when_no_versions_exist():

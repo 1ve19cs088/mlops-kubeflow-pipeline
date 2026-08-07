@@ -82,6 +82,10 @@ def test_status_page_shows_healthy_when_api_and_model_available():
     assert "actions/workflows/ci.yml/badge.svg" in response.text
     assert "MLflow Registry Status" in response.text
     assert "<p class=\"mb-0\">1</p>" in response.text
+    # Stage 6: Deployment Pipeline section, reflecting this real repo's state
+    assert "Deployment Pipeline" in response.text
+    assert "Docker Build" in response.text
+    assert "Future Stage" in response.text
 
 
 def test_status_page_degrades_gracefully_when_api_unavailable():
