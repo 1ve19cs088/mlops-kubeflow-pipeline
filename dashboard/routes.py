@@ -349,8 +349,70 @@ def models_list(
     return templates.TemplateResponse(request, "models.html", {"models": rows})
 
 
+def _build_version_row(mlflow_client: MlflowRegistryClient, version) -> dict:
+    metrics = mlflow_client.get_run_metrics(version.run_id)
+    params = mlflow_client.get_run_parameters(version.run_id)
+
+    return {
+        "version": version.version,
+        "current_stage": version.current_stage,
+        "accuracy": metrics.get("test_accuracy"),
+        "precision": metrics.get("test_precision"),
+        "recall": metrics.get("test_recall"),
+        "f1_score": metrics.get("test_f1_score"),
+        "training_duration_seconds": metrics.get("training_duration_seconds"),
+        "algorithm": params.get("algorithm"),
+        "dataset": params.get("dataset"),
+        "created_time": _format_timestamp(version.creation_timestamp),
+        "run_id": version.run_id,
+    }
+
+
 @router.get("/models/{model_name}")
-def model_detail(request: Request, model_name: str):
+def model_detail(
+    request: Request,
+    model_name: str,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+):
+    versions = mlflow_client.get_model_versions(model_name)
+    rows = [_build_version_row(mlflow_client, version) for version in versions]
+
     return templates.TemplateResponse(
-        request, "model_detail.html", {"model_name": model_name}
+        request,
+        "model_detail.html",
+        {"model_name": model_name, "versions": rows},
+    )
+
+
+@router.get("/models/{model_name}/versions/{version}")
+def model_version_detail(
+    request: Request,
+    model_name: str,
+    version: str,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+):
+    versions = mlflow_client.get_model_versions(model_name)
+    matched = next((v for v in versions if str(v.version) == version), None)
+
+    if matched is None:
+        return templates.TemplateResponse(
+            request,
+            "version_detail.html",
+            {"model_name": model_name, "version": version, "found": False},
+            status_code=404,
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "version_detail.html",
+        {
+            "model_name": model_name,
+            "version": matched.version,
+            "current_stage": matched.current_stage,
+            "run_id": matched.run_id,
+            "created_time": _format_timestamp(matched.creation_timestamp),
+            "metrics": mlflow_client.get_run_metrics(matched.run_id),
+            "params": mlflow_client.get_run_parameters(matched.run_id),
+            "found": True,
+        },
     )

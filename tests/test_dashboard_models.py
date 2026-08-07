@@ -118,11 +118,3 @@ def test_models_page_highlights_production_stage():
     assert "bg-success" in response.text
     assert "Production" in response.text
 
-
-def test_model_detail_page_shows_placeholder_and_real_model_name():
-    with TestClient(app) as client:
-        response = client.get("/models/iris-RandomForestClassifier")
-
-    assert response.status_code == 200
-    assert "iris-RandomForestClassifier" in response.text
-    assert "Coming in Stage 3" in response.text

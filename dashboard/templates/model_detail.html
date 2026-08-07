@@ -1,9 +1,55 @@
 {% extends "base.html" %}
 {% block title %}{{ model_name }} — MLOps Dashboard{% endblock %}
 {% block content %}
-<h1 class="mb-4">{{ model_name }}</h1>
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="mb-0">{{ model_name }}</h1>
+  <a href="/models" class="btn btn-outline-secondary btn-sm">Back to Models</a>
+</div>
 
-<div class="alert alert-info">Coming in Stage 3</div>
-
-<a href="/models" class="btn btn-outline-secondary">Back to Models</a>
+{% if versions %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead>
+      <tr>
+        <th>Version</th>
+        <th>Current Stage</th>
+        <th>Accuracy</th>
+        <th>Precision</th>
+        <th>Recall</th>
+        <th>F1</th>
+        <th>Training Duration</th>
+        <th>Algorithm</th>
+        <th>Dataset</th>
+        <th>Created</th>
+        <th>Run ID</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in versions %}
+      <tr>
+        <td>{{ v.version }}</td>
+        <td>
+          <span class="badge {{ 'bg-success' if v.current_stage == 'Production' else 'bg-secondary' }}">
+            {{ v.current_stage or "None" }}
+          </span>
+        </td>
+        <td>{{ "%.4f"|format(v.accuracy) if v.accuracy is not none else "N/A" }}</td>
+        <td>{{ "%.4f"|format(v.precision) if v.precision is not none else "N/A" }}</td>
+        <td>{{ "%.4f"|format(v.recall) if v.recall is not none else "N/A" }}</td>
+        <td>{{ "%.4f"|format(v.f1_score) if v.f1_score is not none else "N/A" }}</td>
+        <td>{{ "%.2fs"|format(v.training_duration_seconds) if v.training_duration_seconds is not none else "N/A" }}</td>
+        <td>{{ v.algorithm or "N/A" }}</td>
+        <td>{{ v.dataset or "N/A" }}</td>
+        <td>{{ v.created_time }}</td>
+        <td><code>{{ v.run_id[:8] if v.run_id else "N/A" }}</code></td>
+        <td><a href="/models/{{ model_name }}/versions/{{ v.version }}" class="btn btn-sm btn-primary">View Details</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-muted">No versions registered yet for this model.</p>
+{% endif %}
 {% endblock %}

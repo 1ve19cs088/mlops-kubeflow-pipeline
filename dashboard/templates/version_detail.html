@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ model_name }} v{{ version }} — MLOps Dashboard{% endblock %}
+{% block content %}
+{% if found %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="mb-0">{{ model_name }} — Version {{ version }}</h1>
+  <a href="/models/{{ model_name }}" class="btn btn-outline-secondary btn-sm">Back to {{ model_name }}</a>
+</div>
+
+<dl class="row">
+  <dt class="col-sm-3">Current Stage</dt>
+  <dd class="col-sm-9">
+    <span class="badge {{ 'bg-success' if current_stage == 'Production' else 'bg-secondary' }}">
+      {{ current_stage or "None" }}
+    </span>
+  </dd>
+  <dt class="col-sm-3">Created</dt>
+  <dd class="col-sm-9">{{ created_time }}</dd>
+  <dt class="col-sm-3">Run ID</dt>
+  <dd class="col-sm-9"><code>{{ run_id }}</code></dd>
+</dl>
+
+<h2 class="h5 mt-4">Metrics</h2>
+{% if metrics %}
+<table class="table table-sm w-auto">
+  <tbody>
+    {% for key, value in metrics.items() %}
+    <tr><th class="pe-4">{{ key }}</th><td>{{ value }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-muted">No metrics logged for this run.</p>
+{% endif %}
+
+<h2 class="h5 mt-4">Parameters</h2>
+{% if params %}
+<table class="table table-sm w-auto">
+  <tbody>
+    {% for key, value in params.items() %}
+    <tr><th class="pe-4">{{ key }}</th><td>{{ value }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-muted">No parameters logged for this run.</p>
+{% endif %}
+
+{% else %}
+<div class="alert alert-warning">Version {{ version }} not found for model "{{ model_name }}".</div>
+<a href="/models/{{ model_name }}" class="btn btn-outline-secondary">Back to {{ model_name }}</a>
+{% endif %}
+{% endblock %}
