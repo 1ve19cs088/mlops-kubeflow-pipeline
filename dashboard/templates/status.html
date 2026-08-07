@@ -114,4 +114,19 @@
     <span class="badge {{ 'bg-success' if deployment_status.status == 'Configured' else 'bg-secondary' }}">{{ deployment_status.status }}</span>
   </div></div></div>
 </div>
+
+<div class="row g-3 mt-1">
+  <div class="col-md-4"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Latest Published Image</h6>
+    <p class="mb-0">{{ deployment_status.latest_published_image or "Not Published" }}</p>
+  </div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Image Digest</h6>
+    <p class="mb-0 text-break">{{ deployment_status.image_digest or "Not Published" }}</p>
+  </div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Current Tag</h6>
+    <p class="mb-0">{{ deployment_status.current_tag or "Not Published" }}</p>
+  </div></div></div>
+</div>
 {% endblock %}

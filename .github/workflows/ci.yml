@@ -15,6 +15,12 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.11"
+  # Mirrors deployment/config.py's own defaults (DEPLOYMENT_REGISTRY_PROVIDER
+  # etc.) — kept here as the one place this workflow's registry choice is
+  # configured, not hardcoded into individual steps below.
+  DEPLOYMENT_REGISTRY: ghcr.io
+  SERVING_IMAGE_NAME: mlops-kubeflow-pipeline-serving
+  PIPELINE_IMAGE_NAME: mlops-kubeflow-pipeline-pipeline
 
 jobs:
   test:
@@ -110,6 +116,63 @@ jobs:
           file: docker/Dockerfile.pipeline
           push: false
           tags: mlops-kubeflow-pipeline-pipeline:ci
+          cache-from: type=gha,scope=pipeline
+          cache-to: type=gha,mode=max,scope=pipeline
+
+  publish-images:
+    name: Publish Docker images to GHCR
+    runs-on: ubuntu-latest
+    needs: docker-build
+    # Only ever publish a real image from main itself — never from a
+    # pull request (which could come from an untrusted fork with write
+    # access to this job's GITHUB_TOKEN) and never from a manual
+    # workflow_dispatch run against some other branch.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      # Required to push to this repo's GHCR packages using the
+      # workflow's own automatic GITHUB_TOKEN — no manually-managed
+      # secret or credential is introduced for this.
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download pipeline artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-run-artifacts
+          path: .
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DEPLOYMENT_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish serving image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.serving
+          push: true
+          tags: |
+            ${{ env.DEPLOYMENT_REGISTRY }}/${{ github.repository_owner }}/${{ env.SERVING_IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.DEPLOYMENT_REGISTRY }}/${{ github.repository_owner }}/${{ env.SERVING_IMAGE_NAME }}:latest
+          cache-from: type=gha,scope=serving
+          cache-to: type=gha,mode=max,scope=serving
+
+      - name: Publish pipeline image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.pipeline
+          push: true
+          tags: |
+            ${{ env.DEPLOYMENT_REGISTRY }}/${{ github.repository_owner }}/${{ env.PIPELINE_IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.DEPLOYMENT_REGISTRY }}/${{ github.repository_owner }}/${{ env.PIPELINE_IMAGE_NAME }}:latest
           cache-from: type=gha,scope=pipeline
           cache-to: type=gha,mode=max,scope=pipeline
 
