@@ -24,7 +24,20 @@ import httpx
 from deployment.config import DeploymentConfig
 
 REQUEST_TIMEOUT_SECONDS = 5.0
-MANIFEST_ACCEPT_HEADER = "application/vnd.docker.distribution.manifest.v2+json"
+# Images built via docker/build-push-action's docker-container driver
+# (this project's CI) default to provenance attestations enabled, which
+# push an OCI image index even for a single-platform build — so a tag
+# can resolve to any of these manifest shapes depending on how it was
+# published. All four are accepted so GHCR can return whichever one it
+# actually has stored, rather than 404/406-ing against a narrower Accept.
+MANIFEST_ACCEPT_HEADER = ", ".join(
+    [
+        "application/vnd.docker.distribution.manifest.v2+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.oci.image.index.v1+json",
+    ]
+)
 
 
 @dataclass(frozen=True)
