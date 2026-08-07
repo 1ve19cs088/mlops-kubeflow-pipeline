@@ -1,5 +1,29 @@
 {% extends "base.html" %}
 {% block title %}{{ model_name }} v{{ version }} — MLOps Dashboard{% endblock %}
+
+{% macro render_json(value) %}
+{% if value is mapping %}
+<table class="table table-sm w-auto mb-2">
+  <tbody>
+    {% for k, v in value.items() %}
+    <tr>
+      <th class="pe-4">{{ k }}</th>
+      <td>{{ render_json(v) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% elif value is sequence and value is not string %}
+<ul class="mb-2">
+  {% for item in value %}
+  <li>{{ render_json(item) }}</li>
+  {% endfor %}
+</ul>
+{% else %}
+{{ value }}
+{% endif %}
+{% endmacro %}
+
 {% block content %}
 {% if found %}
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -7,17 +31,22 @@
   <a href="/models/{{ model_name }}" class="btn btn-outline-secondary btn-sm">Back to {{ model_name }}</a>
 </div>
 
+<h2 class="h5">General Information</h2>
 <dl class="row">
-  <dt class="col-sm-3">Current Stage</dt>
+  <dt class="col-sm-3">Model Name</dt>
+  <dd class="col-sm-9">{{ model_name }}</dd>
+  <dt class="col-sm-3">Version</dt>
+  <dd class="col-sm-9">{{ version }}</dd>
+  <dt class="col-sm-3">Stage</dt>
   <dd class="col-sm-9">
     <span class="badge {{ 'bg-success' if current_stage == 'Production' else 'bg-secondary' }}">
       {{ current_stage or "None" }}
     </span>
   </dd>
-  <dt class="col-sm-3">Created</dt>
-  <dd class="col-sm-9">{{ created_time }}</dd>
   <dt class="col-sm-3">Run ID</dt>
   <dd class="col-sm-9"><code>{{ run_id }}</code></dd>
+  <dt class="col-sm-3">Created Time</dt>
+  <dd class="col-sm-9">{{ created_time }}</dd>
 </dl>
 
 <h2 class="h5 mt-4">Metrics</h2>
@@ -44,6 +73,31 @@
 </table>
 {% else %}
 <p class="text-muted">No parameters logged for this run.</p>
+{% endif %}
+
+<h2 class="h5 mt-4">Artifacts</h2>
+{% if artifacts %}
+{% for artifact in artifacts %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <code>{{ artifact.path }}</code>
+    <a href="{{ artifact.download_url }}" class="btn btn-sm btn-outline-secondary">Download</a>
+  </div>
+  <div class="card-body">
+    {% if artifact.kind == "json" %}
+    {{ render_json(artifact.content) }}
+    {% elif artifact.kind == "text" %}
+    <pre class="mb-0"><code>{{ artifact.content }}</code></pre>
+    {% elif artifact.kind == "image" %}
+    <img src="{{ artifact.data_uri }}" class="img-fluid" alt="{{ artifact.path }}">
+    {% else %}
+    <p class="text-muted mb-0">No preview available for this file. Use the Download button above.</p>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+{% else %}
+<p class="text-muted">No artifacts logged for this run.</p>
 {% endif %}
 
 {% else %}

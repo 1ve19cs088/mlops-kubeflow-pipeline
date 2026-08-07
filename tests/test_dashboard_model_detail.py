@@ -38,6 +38,9 @@ class StubMlflowClient:
     def get_run_parameters(self, run_id):
         return self._params_by_run.get(run_id, {})
 
+    def list_run_artifacts(self, run_id):
+        return []
+
 
 def test_model_detail_lists_every_version_newest_first_with_full_columns():
     stub = StubMlflowClient(

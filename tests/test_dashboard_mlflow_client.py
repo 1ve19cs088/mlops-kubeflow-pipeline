@@ -149,6 +149,39 @@ def test_get_run_parameters_returns_dict_of_params():
     assert params == {"algorithm": "RandomForestClassifier"}
 
 
+def test_list_run_artifacts_returns_top_level_file_infos():
+    mock_client = MagicMock()
+    mock_client.list_artifacts.return_value = [
+        SimpleNamespace(path="training_report.json", is_dir=False, file_size=42),
+        SimpleNamespace(path="model", is_dir=True, file_size=None),
+    ]
+    client = _client_with_mock(mock_client)
+
+    artifacts = client.list_run_artifacts("run-123")
+
+    assert [a.path for a in artifacts] == ["training_report.json", "model"]
+    mock_client.list_artifacts.assert_called_once_with("run-123")
+
+
+def test_get_artifact_bytes_reads_the_downloaded_file(tmp_path):
+    downloaded_file = tmp_path / "training_report.json"
+    downloaded_file.write_bytes(b'{"algorithm": "RandomForestClassifier"}')
+    client = _client_with_mock(MagicMock())
+
+    with patch(
+        "dashboard.mlflow_client.mlflow.artifacts.download_artifacts",
+        return_value=str(downloaded_file),
+    ) as mock_download:
+        content = client.get_artifact_bytes("run-123", "training_report.json")
+
+    assert content == b'{"algorithm": "RandomForestClassifier"}'
+    mock_download.assert_called_once_with(
+        run_id="run-123",
+        artifact_path="training_report.json",
+        tracking_uri="sqlite:///unused.db",
+    )
+
+
 def test_get_mlflow_client_returns_registry_client_instance():
     client = get_mlflow_client()
 

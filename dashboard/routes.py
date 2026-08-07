@@ -6,14 +6,17 @@ renders a template — no prediction/validation/training/evaluation
 logic lives here, only presentation.
 """
 
+import base64
 import io
+import json
+import mimetypes
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from dashboard.api_client import (
@@ -384,6 +387,53 @@ def model_detail(
     )
 
 
+PREVIEWABLE_JSON_SUFFIXES = (".json",)
+PREVIEWABLE_TEXT_SUFFIXES = (".txt",)
+PREVIEWABLE_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif")
+
+
+def _build_artifact_previews(
+    mlflow_client: MlflowRegistryClient, run_id: str, model_name: str, version: str
+) -> list[dict]:
+    previews = []
+
+    for artifact in mlflow_client.list_run_artifacts(run_id):
+        if artifact.is_dir:
+            continue
+
+        lower_path = artifact.path.lower()
+        entry = {
+            "path": artifact.path,
+            "kind": "download",
+            "download_url": (
+                f"/models/{model_name}/versions/{version}/artifacts/{artifact.path}"
+            ),
+        }
+
+        try:
+            if lower_path.endswith(PREVIEWABLE_JSON_SUFFIXES):
+                data = mlflow_client.get_artifact_bytes(run_id, artifact.path)
+                entry["kind"] = "json"
+                entry["content"] = json.loads(data.decode("utf-8"))
+            elif lower_path.endswith(PREVIEWABLE_TEXT_SUFFIXES):
+                data = mlflow_client.get_artifact_bytes(run_id, artifact.path)
+                entry["kind"] = "text"
+                entry["content"] = data.decode("utf-8")
+            elif lower_path.endswith(PREVIEWABLE_IMAGE_SUFFIXES):
+                data = mlflow_client.get_artifact_bytes(run_id, artifact.path)
+                mime = mimetypes.guess_type(artifact.path)[0] or "application/octet-stream"
+                entry["kind"] = "image"
+                entry["data_uri"] = (
+                    f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+                )
+        except Exception:
+            entry["kind"] = "download"
+
+        previews.append(entry)
+
+    return previews
+
+
 @router.get("/models/{model_name}/versions/{version}")
 def model_version_detail(
     request: Request,
@@ -413,6 +463,36 @@ def model_version_detail(
             "created_time": _format_timestamp(matched.creation_timestamp),
             "metrics": mlflow_client.get_run_metrics(matched.run_id),
             "params": mlflow_client.get_run_parameters(matched.run_id),
+            "artifacts": _build_artifact_previews(
+                mlflow_client, matched.run_id, model_name, matched.version
+            ),
             "found": True,
         },
+    )
+
+
+@router.get("/models/{model_name}/versions/{version}/artifacts/{artifact_path:path}")
+def download_artifact(
+    model_name: str,
+    version: str,
+    artifact_path: str,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+):
+    versions = mlflow_client.get_model_versions(model_name)
+    matched = next((v for v in versions if str(v.version) == version), None)
+    if matched is None:
+        raise HTTPException(status_code=404, detail="Model version not found")
+
+    try:
+        content = mlflow_client.get_artifact_bytes(matched.run_id, artifact_path)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+
+    media_type = mimetypes.guess_type(artifact_path)[0] or "application/octet-stream"
+    filename = artifact_path.rsplit("/", 1)[-1]
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

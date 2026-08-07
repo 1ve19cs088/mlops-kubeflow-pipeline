@@ -19,7 +19,9 @@ import os
 from pathlib import Path
 from typing import Optional
 
+import mlflow.artifacts
 from mlflow import MlflowClient
+from mlflow.entities import FileInfo
 from mlflow.entities.model_registry import ModelVersion, RegisteredModel
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -46,6 +48,7 @@ class MlflowRegistryClient:
     """
 
     def __init__(self, tracking_uri: str = MLFLOW_TRACKING_URI):
+        self._tracking_uri = tracking_uri
         self._client = MlflowClient(tracking_uri=tracking_uri)
 
     def get_registered_models(self) -> list[RegisteredModel]:
@@ -92,6 +95,30 @@ class MlflowRegistryClient:
         """All parameters logged against `run_id`."""
 
         return dict(self._client.get_run(run_id).data.params)
+
+    def list_run_artifacts(self, run_id: str) -> list[FileInfo]:
+        """Top-level artifact files/directories logged against `run_id`."""
+
+        return list(self._client.list_artifacts(run_id))
+
+    def get_artifact_bytes(self, run_id: str, artifact_path: str) -> bytes:
+        """
+        Downloads one artifact file and returns its raw bytes.
+
+        Uses mlflow.artifacts.download_artifacts (scoped to this
+        client's own tracking_uri, not any process-global one, for the
+        same concurrency-safety reason described on this class) rather
+        than MlflowClient.download_artifacts, which is deprecated.
+        Downloads land in a fresh tempfile.mkdtemp() directory, not the
+        project root.
+        """
+
+        local_path = mlflow.artifacts.download_artifacts(
+            run_id=run_id,
+            artifact_path=artifact_path,
+            tracking_uri=self._tracking_uri,
+        )
+        return Path(local_path).read_bytes()
 
 
 def get_mlflow_client() -> MlflowRegistryClient:
