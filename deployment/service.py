@@ -1,19 +1,24 @@
 """
 DeploymentService: the single point other code goes through to ask
-"what would this project deploy, and where would it go" — and, as of
-this stage, "what's actually published right now."
+"what would this project deploy, and where would it go", "what's
+actually published right now", and — as of this stage — to actually
+deploy a published image to the cluster.
 
-No push, deploy, or rollout behavior exists yet. No Docker or
-Kubernetes client is imported here, and no shell command is ever run.
-Configuration fields come from DeploymentConfig; the
-publish-status fields come from a real (but anonymous, read-only)
-registry query — nothing here is hardcoded or faked.
+Configuration fields come from DeploymentConfig; publish-status comes
+from a real, anonymous registry query; deploy() applies this
+project's own committed Kubernetes manifests via kubectl and waits
+for the rollout. Nothing here is hardcoded or faked, and no
+shell/Docker/Kubernetes call happens anywhere except inside
+deploy() — every other method stays read-only.
 """
 
+import time
 from dataclasses import dataclass
 from typing import Optional
 
 from deployment.config import DeploymentConfig, load_deployment_config
+from deployment.kubectl_client import apply_manifest, wait_for_rollout
+from deployment.manifests import build_manifest_bundle
 from deployment.registry_client import get_latest_published_image
 
 
@@ -31,9 +36,24 @@ class DeploymentStatus:
     current_tag: Optional[str]
 
 
+@dataclass(frozen=True)
+class DeploymentResult:
+    success: bool
+    image: str
+    namespace: str
+    deployment_name: str
+    duration_seconds: float
+    message: str
+
+
 class DeploymentService:
     def __init__(self, config: Optional[DeploymentConfig] = None):
         self._config = config or load_deployment_config()
+
+    def _build_image_reference(self, tag: str) -> str:
+        config = self._config
+        owner = config.repository.split("/")[0]
+        return f"{config.registry}/{owner}/{config.image_name}:{tag}"
 
     def get_status(self) -> DeploymentStatus:
         """
@@ -56,10 +76,7 @@ class DeploymentService:
 
         latest_published_image = None
         if published_image is not None:
-            owner = config.repository.split("/")[0]
-            latest_published_image = (
-                f"{config.registry}/{owner}/{config.image_name}:{published_image.tag}"
-            )
+            latest_published_image = self._build_image_reference(published_image.tag)
 
         return DeploymentStatus(
             registry=config.registry,
@@ -72,6 +89,60 @@ class DeploymentService:
             latest_published_image=latest_published_image,
             image_digest=published_image.digest if published_image else None,
             current_tag=published_image.tag if published_image else None,
+        )
+
+    def deploy(self, image_tag: str, timeout_seconds: int = 120) -> DeploymentResult:
+        """
+        Points the model-serving Deployment at `image_tag`, applies
+        this project's own committed Kubernetes manifests (namespace,
+        deployment, service, hpa — kubernetes/*.yaml, unmodified
+        except for the image field) via kubectl, and waits for the
+        rollout to finish.
+
+        This is the first method on DeploymentService that changes
+        cluster state — get_status() and everything before it in this
+        project stayed read-only. A failure at either the apply step
+        or the rollout-wait step is reported in the result rather than
+        raised; nothing here assumes the cluster or kubectl are
+        reachable.
+        """
+
+        image = self._build_image_reference(image_tag)
+        manifest_yaml, deployment_name, namespace = build_manifest_bundle(image)
+
+        start = time.monotonic()
+
+        apply_result = apply_manifest(manifest_yaml)
+        if not apply_result.success:
+            return DeploymentResult(
+                success=False,
+                image=image,
+                namespace=namespace,
+                deployment_name=deployment_name,
+                duration_seconds=time.monotonic() - start,
+                message=f"kubectl apply failed: {apply_result.output}",
+            )
+
+        rollout_result = wait_for_rollout(deployment_name, namespace, timeout_seconds)
+        duration_seconds = time.monotonic() - start
+
+        if not rollout_result.success:
+            return DeploymentResult(
+                success=False,
+                image=image,
+                namespace=namespace,
+                deployment_name=deployment_name,
+                duration_seconds=duration_seconds,
+                message=f"Rollout failed or timed out: {rollout_result.output}",
+            )
+
+        return DeploymentResult(
+            success=True,
+            image=image,
+            namespace=namespace,
+            deployment_name=deployment_name,
+            duration_seconds=duration_seconds,
+            message=rollout_result.output or "Rollout completed successfully.",
         )
 
 
