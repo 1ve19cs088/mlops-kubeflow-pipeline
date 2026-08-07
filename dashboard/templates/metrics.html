@@ -5,17 +5,15 @@
 
 {% if metrics %}
 <div class="row g-3 mb-4">
-  <div class="col-md-3"><div class="card"><div class="card-body">
-    <h6 class="text-muted">Dataset</h6><p class="mb-0">{{ metrics.dataset }}</p>
+  <div class="col-md-4"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Model</h6><p class="mb-0">{{ model_name }}</p>
   </div></div></div>
-  <div class="col-md-3"><div class="card"><div class="card-body">
-    <h6 class="text-muted">Algorithm</h6><p class="mb-0">{{ metrics.algorithm }}</p>
+  <div class="col-md-4"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Version</h6><p class="mb-0">{{ version }}</p>
   </div></div></div>
-  <div class="col-md-3"><div class="card"><div class="card-body">
-    <h6 class="text-muted">Model Version</h6><p class="mb-0">{{ metrics.model_version }}</p>
-  </div></div></div>
-  <div class="col-md-3"><div class="card"><div class="card-body">
-    <h6 class="text-muted">Evaluated At</h6><p class="mb-0">{{ metrics.evaluated_at }}</p>
+  <div class="col-md-4"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Training Duration</h6>
+    <p class="mb-0">{{ "%.2fs"|format(metrics.training_duration_seconds) if metrics.training_duration_seconds is not none else "N/A" }}</p>
   </div></div></div>
 </div>
 
@@ -25,11 +23,10 @@
     <table class="table table-bordered">
       <thead><tr><th></th><th>Train</th><th>Test</th></tr></thead>
       <tbody>
-        <tr><td>Samples</td><td>{{ metrics.train.num_samples }}</td><td>{{ metrics.test.num_samples }}</td></tr>
-        <tr><td>Accuracy</td><td>{{ "%.4f"|format(metrics.train.accuracy) }}</td><td>{{ "%.4f"|format(metrics.test.accuracy) }}</td></tr>
-        <tr><td>Precision</td><td>{{ "%.4f"|format(metrics.train.precision) }}</td><td>{{ "%.4f"|format(metrics.test.precision) }}</td></tr>
-        <tr><td>Recall</td><td>{{ "%.4f"|format(metrics.train.recall) }}</td><td>{{ "%.4f"|format(metrics.test.recall) }}</td></tr>
-        <tr><td>F1 Score</td><td>{{ "%.4f"|format(metrics.train.f1_score) }}</td><td>{{ "%.4f"|format(metrics.test.f1_score) }}</td></tr>
+        <tr><td>Accuracy</td><td>{{ "%.4f"|format(metrics.train_accuracy) if metrics.train_accuracy is not none else "N/A" }}</td><td>{{ "%.4f"|format(metrics.test_accuracy) if metrics.test_accuracy is not none else "N/A" }}</td></tr>
+        <tr><td>Precision</td><td>{{ "%.4f"|format(metrics.train_precision) if metrics.train_precision is not none else "N/A" }}</td><td>{{ "%.4f"|format(metrics.test_precision) if metrics.test_precision is not none else "N/A" }}</td></tr>
+        <tr><td>Recall</td><td>{{ "%.4f"|format(metrics.train_recall) if metrics.train_recall is not none else "N/A" }}</td><td>{{ "%.4f"|format(metrics.test_recall) if metrics.test_recall is not none else "N/A" }}</td></tr>
+        <tr><td>F1 Score</td><td>{{ "%.4f"|format(metrics.train_f1_score) if metrics.train_f1_score is not none else "N/A" }}</td><td>{{ "%.4f"|format(metrics.test_f1_score) if metrics.test_f1_score is not none else "N/A" }}</td></tr>
       </tbody>
     </table>
   </div>
@@ -40,18 +37,19 @@
 </div>
 
 <h5 class="mt-4">Confusion Matrix (Test)</h5>
+{% if confusion_matrix %}
 <div class="table-responsive">
   <table class="table table-bordered text-center w-auto">
     <thead>
       <tr>
         <th></th>
-        {% for label in metrics.test.confusion_matrix.labels %}<th>{{ label }}</th>{% endfor %}
+        {% for label in confusion_matrix.labels %}<th>{{ label }}</th>{% endfor %}
       </tr>
     </thead>
     <tbody>
-      {% for row in metrics.test.confusion_matrix.matrix %}
+      {% for row in confusion_matrix.matrix %}
       <tr>
-        <th>{{ metrics.test.confusion_matrix.labels[loop.index0] }}</th>
+        <th>{{ confusion_matrix.labels[loop.index0] }}</th>
         {% for value in row %}<td>{{ value }}</td>{% endfor %}
       </tr>
       {% endfor %}
@@ -59,7 +57,10 @@
   </table>
 </div>
 {% else %}
-<p class="text-muted">Unable to reach the API — see the warning above.</p>
+<p class="text-muted">Confusion matrix not available for this run.</p>
+{% endif %}
+{% else %}
+<p class="text-muted">No models registered yet. Run the training pipeline to register one.</p>
 {% endif %}
 {% endblock %}
 
@@ -76,19 +77,19 @@
         {
           label: "Train",
           data: [
-            {{ metrics.train.accuracy }},
-            {{ metrics.train.precision }},
-            {{ metrics.train.recall }},
-            {{ metrics.train.f1_score }}
+            {{ metrics.train_accuracy or 0 }},
+            {{ metrics.train_precision or 0 }},
+            {{ metrics.train_recall or 0 }},
+            {{ metrics.train_f1_score or 0 }}
           ]
         },
         {
           label: "Test",
           data: [
-            {{ metrics.test.accuracy }},
-            {{ metrics.test.precision }},
-            {{ metrics.test.recall }},
-            {{ metrics.test.f1_score }}
+            {{ metrics.test_accuracy or 0 }},
+            {{ metrics.test_precision or 0 }},
+            {{ metrics.test_recall or 0 }},
+            {{ metrics.test_f1_score or 0 }}
           ]
         }
       ]

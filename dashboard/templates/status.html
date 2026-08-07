@@ -31,7 +31,30 @@
   <img src="{{ github_badge_url }}" alt="GitHub Actions status">
 </div>
 
+<h5 class="mt-4">MLflow Registry Status</h5>
+<div class="row g-3">
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Database Reachable</h6>
+    <span class="badge {{ 'bg-success' if mlflow_ok else 'bg-danger' }}">{{ "Reachable" if mlflow_ok else "Unreachable" }}</span>
+  </div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Registered Models</h6>
+    <p class="mb-0">{{ registry.total_models }}</p>
+  </div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Model Versions</h6>
+    <p class="mb-0">{{ registry.total_versions }}</p>
+  </div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body">
+    <h6 class="text-muted">Latest Registration Time</h6>
+    <p class="mb-0">{{ registry.latest_created_time or "N/A" }}</p>
+  </div></div></div>
+</div>
+
 {% if api_error %}
 <div class="alert alert-warning mt-3">API unreachable: {{ api_error }}</div>
+{% endif %}
+{% if mlflow_error %}
+<div class="alert alert-warning mt-3">MLflow registry unreachable: {{ mlflow_error }}</div>
 {% endif %}
 {% endblock %}

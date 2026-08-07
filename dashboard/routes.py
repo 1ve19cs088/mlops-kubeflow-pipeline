@@ -1,9 +1,13 @@
 """
 Dashboard page routes.
 
-Every route calls the existing FastAPI service through ApiClient and
-renders a template — no prediction/validation/training/evaluation
-logic lives here, only presentation.
+Prediction/batch-prediction routes call the existing FastAPI serving
+API through ApiClient. Model-registry information (Home, Metrics, and
+the Model Registry pages) is read through MlflowRegistryClient
+instead — MLflow, not the API's local artifact files, is this
+dashboard's source of truth for anything about a trained model. No
+prediction/validation/training/evaluation logic lives here, only
+presentation.
 """
 
 import base64
@@ -36,17 +40,83 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 router = APIRouter()
 
 
+def _latest_model_and_version(mlflow_client: MlflowRegistryClient, models: list):
+    """
+    The most recently updated registered model (models is expected to
+    already be sorted newest-first by get_registered_models()) and its
+    highest version number, if any model is registered at all.
+    """
+
+    if not models:
+        return None, None
+
+    latest_model_name = models[0].name
+    return latest_model_name, mlflow_client.get_latest_version(latest_model_name)
+
+
+def _build_registry_summary(mlflow_client: MlflowRegistryClient) -> dict:
+    """
+    Registry-wide counts plus a summary of the most recently updated
+    model — shared by the Home and System Status pages so "which
+    model is latest" is resolved in exactly one place.
+    """
+
+    models = mlflow_client.get_registered_models()
+    latest_model_name, latest_version = _latest_model_and_version(mlflow_client, models)
+
+    latest_stage = None
+    latest_accuracy = None
+    latest_created_time = None
+    if latest_version is not None:
+        latest_stage = latest_version.current_stage
+        latest_created_time = _format_timestamp(latest_version.creation_timestamp)
+        latest_accuracy = mlflow_client.get_run_metrics(latest_version.run_id).get(
+            "test_accuracy"
+        )
+
+    total_versions = sum(
+        len(mlflow_client.get_model_versions(model.name)) for model in models
+    )
+
+    return {
+        "total_models": len(models),
+        "total_versions": total_versions,
+        "latest_model_name": latest_model_name,
+        "latest_version": latest_version.version if latest_version is not None else None,
+        "latest_stage": latest_stage,
+        "latest_accuracy": latest_accuracy,
+        "latest_created_time": latest_created_time,
+    }
+
+
+def _get_confusion_matrix(mlflow_client: MlflowRegistryClient, run_id: str):
+    """
+    The test-split confusion matrix for `run_id`, read from the
+    metrics.json artifact MLflow tracking already logs — a confusion
+    matrix isn't a scalar, so it was never logged as an MLflow metric,
+    only inside this artifact. Returns None if the artifact is
+    missing or unparseable rather than raising.
+    """
+
+    try:
+        data = mlflow_client.get_artifact_bytes(run_id, "metrics.json")
+        parsed = json.loads(data.decode("utf-8"))
+        return parsed.get("test", {}).get("confusion_matrix")
+    except Exception:
+        return None
+
+
 @router.get("/")
-def home(request: Request, api_client: ApiClient = Depends(get_api_client)):
+def home(
+    request: Request,
+    api_client: ApiClient = Depends(get_api_client),
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+):
     health = None
-    metadata = None
-    metrics = None
     error = None
 
     try:
         health = api_client.get_health()
-        metadata = api_client.get_metadata()
-        metrics = api_client.get_metrics()
     except ApiUnavailableError as exc:
         error = str(exc)
 
@@ -55,27 +125,35 @@ def home(request: Request, api_client: ApiClient = Depends(get_api_client)):
         "home.html",
         {
             "health": health,
-            "metadata": metadata,
-            "metrics": metrics,
             "error": error,
+            "registry": _build_registry_summary(mlflow_client),
         },
     )
 
 
 @router.get("/metrics")
-def metrics_page(request: Request, api_client: ApiClient = Depends(get_api_client)):
-    metrics = None
-    error = None
+def metrics_page(
+    request: Request,
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+):
+    models = mlflow_client.get_registered_models()
+    latest_model_name, latest_version = _latest_model_and_version(mlflow_client, models)
 
-    try:
-        metrics = api_client.get_metrics()
-    except ApiUnavailableError as exc:
-        error = str(exc)
+    metrics = None
+    confusion_matrix = None
+    if latest_version is not None:
+        metrics = mlflow_client.get_run_metrics(latest_version.run_id)
+        confusion_matrix = _get_confusion_matrix(mlflow_client, latest_version.run_id)
 
     return templates.TemplateResponse(
         request,
         "metrics.html",
-        {"metrics": metrics, "error": error},
+        {
+            "model_name": latest_model_name,
+            "version": latest_version.version if latest_version is not None else None,
+            "metrics": metrics,
+            "confusion_matrix": confusion_matrix,
+        },
     )
 
 
@@ -283,7 +361,11 @@ def deployment_page(request: Request):
 
 
 @router.get("/status")
-def status_page(request: Request, api_client: ApiClient = Depends(get_api_client)):
+def status_page(
+    request: Request,
+    api_client: ApiClient = Depends(get_api_client),
+    mlflow_client: MlflowRegistryClient = Depends(get_mlflow_client),
+):
     api_ok = False
     model_ok = False
     model_info = None
@@ -303,6 +385,19 @@ def status_page(request: Request, api_client: ApiClient = Depends(get_api_client
 
     environment = get_environment_status()
 
+    mlflow_error = None
+    try:
+        registry = _build_registry_summary(mlflow_client)
+        mlflow_ok = True
+    except Exception as exc:
+        mlflow_ok = False
+        mlflow_error = str(exc)
+        registry = {
+            "total_models": 0,
+            "total_versions": 0,
+            "latest_created_time": None,
+        }
+
     return templates.TemplateResponse(
         request,
         "status.html",
@@ -314,6 +409,9 @@ def status_page(request: Request, api_client: ApiClient = Depends(get_api_client
             "docker": environment["docker"],
             "kubernetes": environment["kubernetes"],
             "github_badge_url": get_github_actions_badge_url(),
+            "mlflow_ok": mlflow_ok,
+            "mlflow_error": mlflow_error,
+            "registry": registry,
         },
     )
 

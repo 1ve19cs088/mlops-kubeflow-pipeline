@@ -3,55 +3,74 @@
 {% block content %}
 <h1 class="mb-4">MLOps Kubeflow Pipeline</h1>
 
-{% if health %}
 <div class="row g-3">
   <div class="col-md-3">
     <div class="card"><div class="card-body">
       <h6 class="text-muted">API Health</h6>
+      {% if health %}
       <span class="badge bg-success">{{ health.status }}</span>
+      {% else %}
+      <span class="badge bg-danger">Unreachable</span>
+      {% endif %}
     </div></div>
   </div>
   <div class="col-md-3">
     <div class="card"><div class="card-body">
-      <h6 class="text-muted">Model Version</h6>
-      <p class="mb-0">{{ metadata.model_version if metadata else "unknown" }}</p>
+      <h6 class="text-muted">Total Registered Models</h6>
+      <p class="mb-0">{{ registry.total_models }}</p>
     </div></div>
   </div>
   <div class="col-md-3">
     <div class="card"><div class="card-body">
-      <h6 class="text-muted">Dataset</h6>
-      <p class="mb-0">{{ metrics.dataset if metrics else "unknown" }}</p>
+      <h6 class="text-muted">Total Model Versions</h6>
+      <p class="mb-0">{{ registry.total_versions }}</p>
+    </div></div>
+  </div>
+</div>
+
+{% if registry.total_models > 0 %}
+<div class="row g-3 mt-1">
+  <div class="col-md-3">
+    <div class="card"><div class="card-body">
+      <h6 class="text-muted">Latest Registered Model</h6>
+      <p class="mb-0">{{ registry.latest_model_name }}</p>
     </div></div>
   </div>
   <div class="col-md-3">
     <div class="card"><div class="card-body">
-      <h6 class="text-muted">Algorithm</h6>
-      <p class="mb-0">{{ metadata.algorithm if metadata else "unknown" }}</p>
+      <h6 class="text-muted">Latest Version</h6>
+      <p class="mb-0">{{ registry.latest_version }}</p>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card"><div class="card-body">
+      <h6 class="text-muted">Current Stage</h6>
+      <span class="badge {{ 'bg-success' if registry.latest_stage == 'Production' else 'bg-secondary' }}">
+        {{ registry.latest_stage or "None" }}
+      </span>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card"><div class="card-body">
+      <h6 class="text-muted">Latest Accuracy</h6>
+      <p class="mb-0">{{ "%.4f"|format(registry.latest_accuracy) if registry.latest_accuracy is not none else "N/A" }}</p>
     </div></div>
   </div>
 </div>
 
 <div class="row g-3 mt-1">
-  <div class="col-md-4">
+  <div class="col-md-3">
     <div class="card"><div class="card-body">
-      <h6 class="text-muted">Framework</h6>
-      <p class="mb-0">{{ metadata.framework if metadata else "unknown" }}</p>
-    </div></div>
-  </div>
-  <div class="col-md-4">
-    <div class="card"><div class="card-body">
-      <h6 class="text-muted">Training Timestamp</h6>
-      <p class="mb-0">{{ metadata.trained_at if metadata else "unknown" }}</p>
-    </div></div>
-  </div>
-  <div class="col-md-4">
-    <div class="card"><div class="card-body">
-      <h6 class="text-muted">Deployment Status</h6>
-      <span class="badge bg-success">Reachable</span>
+      <h6 class="text-muted">Latest Training Time</h6>
+      <p class="mb-0">{{ registry.latest_created_time }}</p>
     </div></div>
   </div>
 </div>
 {% else %}
-<p class="text-muted">Unable to reach the API — see the warning above.</p>
+<p class="text-muted mt-3">No models registered yet. Run the training pipeline to register one.</p>
+{% endif %}
+
+{% if error %}
+<p class="text-muted mt-3">API unreachable — see the warning above.</p>
 {% endif %}
 {% endblock %}
