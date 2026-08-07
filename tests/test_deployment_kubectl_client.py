@@ -8,7 +8,7 @@ cluster, and no Docker daemon are needed to run this suite.
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from deployment.kubectl_client import apply_manifest, wait_for_rollout
+from deployment.kubectl_client import apply_manifest, rollout_undo, wait_for_rollout
 
 
 def _completed_process(returncode=0, stdout="", stderr=""):
@@ -95,3 +95,54 @@ def test_wait_for_rollout_reports_failure_on_timeout_or_stuck_rollout():
 
     assert result.success is False
     assert "timed out" in result.output
+
+
+def test_rollout_undo_reports_success_on_zero_exit():
+    with patch(
+        "subprocess.run",
+        return_value=_completed_process(
+            0, stdout="deployment.apps/model-serving rolled back\n"
+        ),
+    ) as mock_run:
+        result = rollout_undo("model-serving", "mlops-kubeflow-pipeline")
+
+    assert result.success is True
+    assert "rolled back" in result.output
+    args, kwargs = mock_run.call_args
+    assert args[0] == [
+        "kubectl",
+        "rollout",
+        "undo",
+        "deployment/model-serving",
+        "-n",
+        "mlops-kubeflow-pipeline",
+    ]
+
+
+def test_rollout_undo_reports_failure_on_nonzero_exit():
+    with patch(
+        "subprocess.run",
+        return_value=_completed_process(1, stderr="error: no rollout history found\n"),
+    ):
+        result = rollout_undo("model-serving", "mlops-kubeflow-pipeline")
+
+    assert result.success is False
+    assert "no rollout history found" in result.output
+
+
+def test_rollout_undo_handles_kubectl_not_found():
+    with patch("subprocess.run", side_effect=FileNotFoundError("kubectl not found")):
+        result = rollout_undo("model-serving", "mlops-kubeflow-pipeline")
+
+    assert result.success is False
+    assert "kubectl not found" in result.output
+
+
+def test_rollout_undo_handles_timeout():
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd=["kubectl"], timeout=30),
+    ):
+        result = rollout_undo("model-serving", "mlops-kubeflow-pipeline")
+
+    assert result.success is False

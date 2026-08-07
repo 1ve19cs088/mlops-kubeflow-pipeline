@@ -73,3 +73,33 @@ def wait_for_rollout(
 
     output = (result.stdout + result.stderr).strip()
     return KubectlResult(success=result.returncode == 0, output=output)
+
+
+def rollout_undo(
+    deployment_name: str,
+    namespace: str,
+    timeout_seconds: int = APPLY_TIMEOUT_SECONDS,
+) -> KubectlResult:
+    """
+    Runs `kubectl rollout undo`, reverting the Deployment to its
+    previous ReplicaSet's pod template (image included) — Kubernetes'
+    own revision history, not anything this project tracks itself.
+
+    This only issues the revert; it doesn't wait for the reverted
+    rollout to finish. Callers should follow up with
+    wait_for_rollout() to confirm the rollback itself actually
+    completes, exactly like a normal deployment.
+    """
+
+    try:
+        result = subprocess.run(
+            ["kubectl", "rollout", "undo", f"deployment/{deployment_name}", "-n", namespace],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        return KubectlResult(success=False, output=str(exc))
+
+    output = (result.stdout + result.stderr).strip()
+    return KubectlResult(success=result.returncode == 0, output=output)
